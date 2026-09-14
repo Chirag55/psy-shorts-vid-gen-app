@@ -102,6 +102,7 @@ Each of these was a real defect found and fixed, not a hypothetical:
 | **Mascot strobing.** On a very short chapter the head and tail overlays nearly touched, flashing Hoot on and off. | A minimum uncovered gap is now required before the second overlay is emitted. |
 | **Silent storage exhaustion.** Word-level alignment across many projects can outgrow AsyncStorage's 6 MB default and fail quietly. | Raised to 64 MB. |
 | **Crash on Android 15+.** The withdrawn FFmpeg builds use 4 KB memory pages and cannot load on 16 KB-page devices. | The app uses a 16 KB-page build. See `docs/FFMPEG.md`. |
+| **Crash on 32-bit ARM devices.** The published FFmpeg AAR has no `libffmpegkit.so` for `armeabi-v7a`, so the app would install and then die on the first render. Found by unpacking the built APK and diffing per-ABI contents; the build warns about none of it. | The APK is arm64-v8a only. This also revealed that `ndk { abiFilters }` was being silently overridden by React Native's `reactNativeArchitectures` property. |
 
 ## Memory
 

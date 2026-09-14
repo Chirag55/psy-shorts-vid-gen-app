@@ -80,8 +80,30 @@ cd ffmpeg-kit
 
 | What | Where | Why |
 | :--- | :--- | :--- |
-| `abiFilters "arm64-v8a", "armeabi-v7a"` | `android/app/build.gradle` | FFmpeg ships a full native stack per ABI; two keeps the APK roughly half the size |
+| `reactNativeArchitectures=arm64-v8a` | `android/gradle.properties` | See below — a correctness fix, not just a size one |
+| `abiFilters "arm64-v8a"` | `android/app/build.gradle` | Same restriction, belt and braces |
 | `AsyncStorage_db_size_in_MB=64` | `android/gradle.properties` | Word-level alignment across a backlog of projects outgrows the 6 MB default |
+
+### Why arm64-v8a only
+
+The published AAR contains `libffmpegkit.so` — the JNI entry point everything
+goes through — for **arm64-v8a and x86 only**. For `armeabi-v7a` it ships the
+`_neon` codec libraries and `libffmpegkit_abidetect.so`, but not the entry
+point itself.
+
+Packaging `armeabi-v7a` therefore produces an APK that installs happily on a
+32-bit ARM phone and then crashes the moment anything touches FFmpeg. It was
+caught by unpacking the built APK and diffing its per-ABI contents against the
+AAR; nothing in the build output warns about it.
+
+Restricting to `arm64-v8a` removes the broken target, drops x86 (emulator-only),
+and takes the APK from about 225 MB to about 110 MB. Every Android phone from
+roughly 2017 onward is arm64.
+
+Note that `ndk { abiFilters }` alone does **not** do this. React Native's Gradle
+plugin drives ABI selection from the `reactNativeArchitectures` property and
+overrides the block, so setting only `abiFilters` silently still built all four
+architectures.
 
 It does not add a `flatDir` repository of its own — the FFmpeg package already
 declares one, and duplicating it across `allprojects` made every module emit a

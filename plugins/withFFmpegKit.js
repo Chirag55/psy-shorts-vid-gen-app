@@ -9,8 +9,13 @@
  * current devices even if they were still downloadable.
  *
  * What this plugin does add:
- *   1. An ABI filter — the FFmpeg AAR carries a full native stack per ABI, and
- *      shipping only the two ABIs real phones use roughly halves the APK.
+ *   1. An arm64-v8a-only build. This is a correctness fix before it is a size
+ *      one: the published FFmpeg AAR contains libffmpegkit.so for arm64-v8a and
+ *      x86 only. On armeabi-v7a it ships the _neon codec libraries but not the
+ *      JNI entry point, so a 32-bit ARM device would install the app and then
+ *      crash the moment anything touched FFmpeg. Restricting to arm64-v8a — what
+ *      every Android phone since roughly 2017 uses — removes that broken target
+ *      and cuts the APK from ~225 MB to ~110 MB, since x86 is emulator-only.
  *   2. A larger AsyncStorage database, because word-level alignment data for a
  *      backlog of projects outgrows the stingy 6 MB default.
  *
@@ -22,6 +27,7 @@
 const { withAppBuildGradle, withGradleProperties } = require('expo/config-plugins');
 
 const ABI_MARKER = 'mindfiles-abi-filter';
+const ABI = 'arm64-v8a';
 
 const withStorageProperties = (config) =>
   withGradleProperties(config, (cfg) => {
@@ -32,6 +38,12 @@ const withStorageProperties = (config) =>
     };
 
     upsert('AsyncStorage_db_size_in_MB', '64');
+
+    // React Native's Gradle plugin drives ABI selection from this property, and
+    // it overrides a plain ndk.abiFilters block — setting only abiFilters
+    // silently still produced x86 and armeabi-v7a output.
+    upsert('reactNativeArchitectures', ABI);
+
     return cfg;
   });
 
@@ -45,10 +57,11 @@ const withAbiFilter = (config) =>
     const updated = cfg.modResults.contents.replace(
       /defaultConfig\s*\{/,
       `defaultConfig {
-        // ${ABI_MARKER}: FFmpeg ships a full native stack per ABI; only the two
-        // that real Android phones use are worth packaging.
+        // ${ABI_MARKER}: belt and braces alongside reactNativeArchitectures —
+        // the published FFmpeg AAR has no libffmpegkit.so for armeabi-v7a, so
+        // packaging that ABI would ship a guaranteed crash.
         ndk {
-            abiFilters "arm64-v8a", "armeabi-v7a"
+            abiFilters "${ABI}"
         }`
     );
 
