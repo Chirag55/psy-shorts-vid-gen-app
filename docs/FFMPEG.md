@@ -61,9 +61,10 @@ desktop studio, which does have libass.
 
 ## If it ever breaks
 
-If that republished artifact is withdrawn too, the config plugin leaves a
-`flatDir` repository over `android/libs/`. Drop any `ffmpeg-kit-*.aar` there and
-Gradle prefers it over the published dependency — no Gradle editing needed.
+If that republished artifact is withdrawn too, `@wokcito/ffmpeg-kit-react-native`
+declares a `flatDir` repository over `android/libs/` in its own Gradle config.
+Drop any `ffmpeg-kit-*.aar` there and Gradle resolves it locally — no Gradle
+editing needed.
 
 To build one from source:
 
@@ -80,5 +81,8 @@ cd ffmpeg-kit
 | What | Where | Why |
 | :--- | :--- | :--- |
 | `abiFilters "arm64-v8a", "armeabi-v7a"` | `android/app/build.gradle` | FFmpeg ships a full native stack per ABI; two keeps the APK roughly half the size |
-| `flatDir` over `android/libs` | `android/build.gradle` | Escape hatch for a hand-built AAR |
 | `AsyncStorage_db_size_in_MB=64` | `android/gradle.properties` | Word-level alignment across a backlog of projects outgrows the 6 MB default |
+
+It does not add a `flatDir` repository of its own — the FFmpeg package already
+declares one, and duplicating it across `allprojects` made every module emit a
+Gradle warning for no benefit.
