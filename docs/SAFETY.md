@@ -55,6 +55,28 @@ anywhere else — you can verify this by grepping the source for `https://`.
 - **Crash traces stay on the device.** The error screen prints the trace for you
   and reports it nowhere.
 
+### APK signing
+
+The APK is signed with Android's standard debug keystore, which is what
+`expo run:android` and EAS internal builds use. That keystore is public — its
+password is literally `android` — so the signature proves nothing about who
+built the APK.
+
+For an app you sideload onto your own phone this is the right tradeoff, and it
+is deliberate rather than an oversight:
+
+- It is reproducible. Any machine can rebuild and reinstall over the existing
+  install, because there is no private key to carry around or lose.
+- Generating a real keystore would mean a private key that either lives in the
+  repository (much worse) or exists in exactly one place, where losing it means
+  you can never update the app without uninstalling it first.
+- Signature spoofing is not a meaningful threat here. Nobody is distributing
+  this APK, and anyone who could get you to install a substituted one has
+  already defeated a far more important control.
+
+If you ever do publish this, generate a real keystore first and keep it out of
+git — see the React Native signed-APK guide linked in `android/app/build.gradle`.
+
 ### One honest note
 
 `SYSTEM_ALERT_WINDOW` (draw over other apps) appears in the manifest. It comes

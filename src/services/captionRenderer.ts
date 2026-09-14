@@ -1,4 +1,12 @@
-import { Skia, PaintStyle, FontStyle, ImageFormat, type SkFont, type SkSurface } from '@shopify/react-native-skia';
+import {
+  Skia,
+  PaintStyle,
+  FontStyle,
+  ImageFormat,
+  type SkFont,
+  type SkSurface,
+  type SkTypeface,
+} from '@shopify/react-native-skia';
 import { Directory, File } from 'expo-file-system';
 import { isBlank, type CaptionFrame } from '@/core/captions';
 import { bucketDir } from './workspace';
@@ -50,11 +58,21 @@ export interface RenderCaptionsOptions {
 function loadFont(size: number): SkFont {
   // System fonts only. Shipping a font file would bloat the APK, and Skia's
   // system manager already resolves a bold sans that reads well at this size.
-  const fontMgr = Skia.FontMgr.System();
-  const typeface =
-    fontMgr.matchFamilyStyle('sans-serif-condensed', FontStyle.Bold) ??
-    fontMgr.matchFamilyStyle('sans-serif', FontStyle.Bold);
-  return Skia.Font(typeface, size);
+  //
+  // matchFamilyStyle is typed as non-null but returns null for a family the
+  // device does not have, and the condensed face is not present on every
+  // Android build — so fall all the way through to Skia's default rather than
+  // handing a null typeface to Skia.Font.
+  try {
+    const fontMgr = Skia.FontMgr.System();
+    const typeface =
+      (fontMgr.matchFamilyStyle('sans-serif-condensed', FontStyle.Bold) as SkTypeface | null) ??
+      (fontMgr.matchFamilyStyle('sans-serif', FontStyle.Bold) as SkTypeface | null);
+    if (typeface) return Skia.Font(typeface, size);
+  } catch {
+    // Fall through to the default face below.
+  }
+  return Skia.Font(undefined, size);
 }
 
 interface Line {
@@ -63,12 +81,21 @@ interface Line {
 }
 
 /** Greedy wrap into at most two lines, which is all the band has room for. */
-function layout(frame: CaptionFrame, font: SkFont, maxWidth: number, spaceWidth: number): Line[] {
+function layout(
+  frame: CaptionFrame,
+  font: SkFont,
+  maxWidth: number,
+  spaceWidth: number,
+  fallbackCharWidth: number
+): Line[] {
   const lines: Line[] = [];
   let current: Line = { tokens: [], width: 0 };
 
   for (const token of frame.tokens) {
-    const width = font.measureText(token.text).width;
+    // A face missing a glyph can measure zero; approximate rather than stack
+    // every token at the same x.
+    const measured = font.measureText(token.text).width;
+    const width = measured > 0 ? measured : token.text.length * fallbackCharWidth;
     const projected = current.tokens.length ? current.width + spaceWidth + width : width;
 
     if (current.tokens.length && projected > maxWidth) {
@@ -101,6 +128,7 @@ export async function renderCaptionFrames(opts: RenderCaptionsOptions): Promise<
 
   const font = loadFont(style.fontSize);
   const spaceWidth = font.measureText(' ').width || style.fontSize * 0.3;
+  const fallbackCharWidth = style.fontSize * 0.55;
   const maxTextWidth = style.width - style.sidePadding * 2;
   const lineHeight = style.fontSize + style.lineGap;
 
@@ -140,7 +168,7 @@ export async function renderCaptionFrames(opts: RenderCaptionsOptions): Promise<
       const canvas = surface.getCanvas();
       canvas.clear(Skia.Color('#00000000'));
 
-      const lines = layout(frame, font, maxTextWidth, spaceWidth);
+      const lines = layout(frame, font, maxTextWidth, spaceWidth, fallbackCharWidth);
       const blockHeight = lines.length * lineHeight;
       let y = (style.height - blockHeight) / 2 + style.fontSize;
 
