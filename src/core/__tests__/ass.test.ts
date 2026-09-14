@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { assTime, buildLongFormAss, buildShortFormAss, offsetWords } from '../ass';
+import { assTime, buildLongFormAss, buildShortFormAss } from '../ass';
 
 const words = [
   { word: 'Why', start: 0, end: 0.4 },
@@ -67,13 +67,5 @@ describe('buildLongFormAss', () => {
     const ass = buildLongFormAss(words, { phraseSize: 3 });
     const lines = ass.split('\n').filter((l) => l.startsWith('Dialogue:'));
     assert.equal(lines.length, 1);
-  });
-});
-
-describe('offsetWords', () => {
-  it('rebases every timing onto a later start', () => {
-    const shifted = offsetWords(words, 10);
-    assert.equal(shifted[0].start, 10);
-    assert.equal(shifted[2].end, 11.3);
   });
 });

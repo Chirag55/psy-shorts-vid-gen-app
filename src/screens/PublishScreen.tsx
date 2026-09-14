@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Linking } from 'react-native';
 import { useRoute, type RouteProp } from '@react-navigation/native';
 import { Badge, Button, Card, Empty, Field, H2, H3, ProgressBar, Row, Screen, Segmented, Small } from '@/components/ui';
@@ -9,6 +9,7 @@ import { authorize, ensureFreshToken, setThumbnail, uploadVideo, watchUrl, type 
 import { buildDescription } from '@/core/timestamps';
 import type { LongScript, ShortScript } from '@/core/types';
 import type { RootStackParamList } from '@/navigation/types';
+import { useMounted } from '@/util/useMounted';
 
 export default function PublishScreen() {
   const { id } = useRoute<RouteProp<RootStackParamList, 'Publish'>>().params;
@@ -20,6 +21,9 @@ export default function PublishScreen() {
   const [signedIn, setSignedIn] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const mounted = useMounted();
+  // An upload must never be started twice — that publishes two videos.
+  const uploadingRef = useRef(false);
 
   const [title, setTitle] = useState(project?.publish.title ?? '');
   const [description, setDescription] = useState(project?.publish.description ?? '');
@@ -71,6 +75,8 @@ export default function PublishScreen() {
   };
 
   const publish = async () => {
+    if (uploadingRef.current) return;
+
     if (!project.assets.finalVideo) {
       Alert.alert('Nothing to publish', 'Assemble the video first.');
       return;
@@ -84,6 +90,7 @@ export default function PublishScreen() {
     }
 
     persist();
+    uploadingRef.current = true;
     setUploading(true);
     setProgress(0);
 
@@ -100,7 +107,9 @@ export default function PublishScreen() {
           tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
           privacyStatus: privacy,
         },
-        setProgress
+        (fraction) => {
+          if (mounted.current) setProgress(fraction);
+        }
       );
 
       patchAssets(project.id, { youtubeVideoId: videoId });
@@ -121,7 +130,8 @@ export default function PublishScreen() {
     } catch (e) {
       Alert.alert('Upload failed', e instanceof Error ? e.message : String(e));
     } finally {
-      setUploading(false);
+      uploadingRef.current = false;
+      if (mounted.current) setUploading(false);
     }
   };
 

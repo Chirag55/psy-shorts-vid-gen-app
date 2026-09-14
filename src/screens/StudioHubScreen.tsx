@@ -10,6 +10,7 @@ import { fetchSubscription } from '@/services/elevenlabs';
 import { countWords, fullNarration } from '@/core/guardrails';
 import type { RootStackParamList } from '@/navigation/types';
 import type { Project } from '@/core/types';
+import { useMounted } from '@/util/useMounted';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -22,25 +23,26 @@ export default function StudioHubScreen() {
 
   const [quotaError, setQuotaError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const mounted = useMounted();
 
   /** Pulls live quota so the badge reflects spend from the desktop studio too. */
   const refreshQuota = useCallback(async () => {
     const key = await getKey('elevenlabs');
     if (!key) {
-      setQuotaError('No ElevenLabs key set');
+      if (mounted.current) setQuotaError('No ElevenLabs key set');
       return;
     }
     setRefreshing(true);
     try {
       const sub = await fetchSubscription(key);
       updateSettings({ voiceCharsUsed: sub.characterCount, voiceCharLimit: sub.characterLimit });
-      setQuotaError(null);
+      if (mounted.current) setQuotaError(null);
     } catch (e) {
-      setQuotaError(e instanceof Error ? e.message : 'Quota unavailable');
+      if (mounted.current) setQuotaError(e instanceof Error ? e.message : 'Quota unavailable');
     } finally {
-      setRefreshing(false);
+      if (mounted.current) setRefreshing(false);
     }
-  }, [updateSettings]);
+  }, [updateSettings, mounted]);
 
   useEffect(() => {
     void refreshQuota();

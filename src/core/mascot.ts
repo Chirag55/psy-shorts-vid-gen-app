@@ -87,8 +87,3 @@ export function longFormMascotWindows(chapterDuration: number, miniHook: string,
 export function shortFormMascotWindows(beats: Array<{ kind: BeatKind; text: string; start: number; end: number }>): MascotWindow[] {
   return beats.map((b) => ({ start: b.start, end: b.end, emotion: emotionFor(b.text, b.kind) }));
 }
-
-/** Overlay geometry from the spec: 280px wide, bottom-left, 120px off the floor. */
-export function shortsOverlayPosition(mascotHeight: number) {
-  return { width: 280, x: 40, y: 1920 - mascotHeight - 120 };
-}

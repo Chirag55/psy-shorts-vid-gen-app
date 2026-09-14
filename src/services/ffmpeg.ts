@@ -1,51 +1,103 @@
-import { FFmpegKit, FFprobeKit, ReturnCode } from 'react-native-ffmpeg-kit';
+import { FFmpegKit, FFprobeKit, ReturnCode, type FFmpegSession, type Log } from '@wokcito/ffmpeg-kit-react-native';
 import { toFsPath } from './workspace';
 
 /**
- * Thin, typed wrapper over FFmpegKit.
+ * Typed wrapper over FFmpegKit.
  *
- * Everything that shells out to FFmpeg goes through `run`, so log capture,
- * cancellation and failure reporting behave the same everywhere.
+ * Everything that shells out to FFmpeg goes through `run`, so log handling,
+ * completion detection and failure reporting behave identically everywhere.
  */
 
 export class FFmpegError extends Error {
   constructor(message: string, readonly logs: string) {
     super(message);
+    this.name = 'FFmpegError';
   }
 }
 
-export type LogSink = (line: string) => void;
+export type LogSink = (lines: string[]) => void;
 
-export async function run(args: string[], onLog?: LogSink): Promise<void> {
-  const session = await FFmpegKit.executeWithArgumentsAsync(args, undefined, (log) => {
-    const message = typeof log?.getMessage === 'function' ? log.getMessage() : String(log);
-    if (message) onLog?.(message.trimEnd());
-  });
+/** How often buffered log lines are handed to the UI. */
+const LOG_FLUSH_MS = 300;
+/** Hard ceiling on a single render, after which the session is abandoned. */
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 
-  // executeWithArgumentsAsync resolves when the session is created, not when it
-  // finishes, so wait for a terminal state before reading the return code.
-  await waitForCompletion(session);
-
-  const returnCode = await session.getReturnCode();
-  if (!ReturnCode.isSuccess(returnCode)) {
-    const logs = await session.getAllLogsAsString(2000).catch(() => '');
-    const cancelled = ReturnCode.isCancel(returnCode);
-    throw new FFmpegError(
-      cancelled ? 'Render cancelled.' : `FFmpeg exited with code ${returnCode.getValue()}.`,
-      logs
-    );
-  }
+export interface RunOptions {
+  onLog?: LogSink;
+  signal?: AbortSignal;
 }
 
-async function waitForCompletion(session: { getState: () => Promise<unknown> }): Promise<void> {
-  // Poll rather than relying on the complete callback — the callback is not
-  // guaranteed to fire if the session fails during argument parsing.
-  for (let i = 0; i < 6000; i++) {
-    const state = String(await session.getState());
-    if (state === 'COMPLETED' || state === 'FAILED' || state === '3' || state === '4') return;
-    await new Promise((r) => setTimeout(r, 100));
+/**
+ * Runs FFmpeg to completion.
+ *
+ * FFmpeg emits log lines faster than React can render them — a 1080p encode
+ * produces thousands per minute. Lines are buffered natively-cheaply here and
+ * flushed on an interval, so the UI does a few updates per second instead of
+ * thousands, which is the difference between a live log and an ANR.
+ */
+export async function run(args: string[], options: RunOptions = {}): Promise<void> {
+  const buffer: string[] = [];
+  let timer: ReturnType<typeof setInterval> | undefined;
+
+  const flush = () => {
+    if (!buffer.length || !options.onLog) return;
+    options.onLog(buffer.splice(0, buffer.length));
+  };
+
+  if (options.onLog) timer = setInterval(flush, LOG_FLUSH_MS);
+
+  try {
+    const session = await new Promise<FFmpegSession>((resolve, reject) => {
+      let settled = false;
+
+      const timeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        void FFmpegKit.cancel();
+        reject(new FFmpegError('FFmpeg exceeded the 30 minute limit and was stopped.', buffer.join('\n')));
+      }, SESSION_TIMEOUT_MS);
+
+      const onAbort = () => {
+        if (settled) return;
+        void FFmpegKit.cancel();
+      };
+      options.signal?.addEventListener('abort', onAbort, { once: true });
+
+      FFmpegKit.executeWithArgumentsAsync(
+        args,
+        (completed) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          options.signal?.removeEventListener('abort', onAbort);
+          resolve(completed);
+        },
+        (log: Log) => {
+          const message = log?.getMessage?.();
+          if (!message) return;
+          // Bound the buffer: a runaway session must not grow memory without limit.
+          if (buffer.length < 400) buffer.push(message.trimEnd());
+        }
+      ).catch((error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        reject(error);
+      });
+    });
+
+    const returnCode = await session.getReturnCode();
+    if (!ReturnCode.isSuccess(returnCode)) {
+      const logs = await session.getAllLogsAsString(2000).catch(() => buffer.join('\n'));
+      throw new FFmpegError(
+        ReturnCode.isCancel(returnCode) ? 'Render cancelled.' : `FFmpeg exited with code ${returnCode.getValue()}.`,
+        logs
+      );
+    }
+  } finally {
+    if (timer) clearInterval(timer);
+    flush();
   }
-  throw new FFmpegError('FFmpeg timed out after 10 minutes.', '');
 }
 
 export async function cancelAll(): Promise<void> {
@@ -54,23 +106,17 @@ export async function cancelAll(): Promise<void> {
 
 /** Media duration in seconds. Returns 0 for anything unreadable. */
 export async function probeDuration(uri: string): Promise<number> {
-  const path = toFsPath(uri);
-  const session = await FFprobeKit.executeWithArguments([
-    '-v', 'error',
-    '-show_entries', 'format=duration',
-    '-of', 'default=noprint_wrappers=1:nokey=1',
-    path,
-  ]);
-  const output = (await session.getOutput().catch(() => '')) ?? '';
-  const value = Number.parseFloat(output.trim());
-  return Number.isFinite(value) ? value : 0;
-}
-
-/**
- * Escapes a path for use *inside* a filter_complex argument.
- * Colons separate filter options and backslashes are the escape character, so
- * both have to be neutralised or the graph fails to parse.
- */
-export function escapeFilterPath(path: string): string {
-  return path.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\\'").replace(/,/g, '\\,');
+  try {
+    const session = await FFprobeKit.executeWithArguments([
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
+      toFsPath(uri),
+    ]);
+    const output = (await session.getOutput()) ?? '';
+    const value = Number.parseFloat(output.trim());
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
 }

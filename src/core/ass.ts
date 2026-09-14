@@ -108,12 +108,3 @@ export function buildLongFormAss(words: WordTiming[], opts?: { phraseSize?: numb
 
   return out;
 }
-
-/**
- * Shifts every timing by `offset` seconds. Chapters are synthesised
- * independently, so their alignments all start at 0 and need rebasing before
- * they can be burned onto a concatenated timeline.
- */
-export function offsetWords(words: WordTiming[], offset: number): WordTiming[] {
-  return words.map((w) => ({ ...w, start: w.start + offset, end: w.end + offset }));
-}

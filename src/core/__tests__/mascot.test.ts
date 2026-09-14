@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { emotionFor, longFormMascotWindows, shortsOverlayPosition } from '../mascot';
+import { emotionFor, longFormMascotWindows, shortFormMascotWindows } from '../mascot';
 
 describe('emotionFor', () => {
   it('reads surprise cues', () => {
@@ -52,9 +52,26 @@ describe('longFormMascotWindows', () => {
   });
 });
 
-describe('shortsOverlayPosition', () => {
-  it('pins Hoot bottom-left above the caption safe area', () => {
-    const pos = shortsOverlayPosition(300);
-    assert.deepEqual(pos, { width: 280, x: 40, y: 1920 - 300 - 120 });
+describe('shortFormMascotWindows', () => {
+  it('emits one window per beat, spanning that beat', () => {
+    const windows = shortFormMascotWindows([
+      { kind: 'hook', text: 'Why does this happen', start: 0, end: 4 },
+      { kind: 'mechanism', text: 'Because your brain reacts', start: 4, end: 18 },
+      { kind: 'reframe', text: 'Remember your power', start: 18, end: 26 },
+    ]);
+    assert.equal(windows.length, 3);
+    assert.deepEqual(
+      windows.map((w) => [w.start, w.end]),
+      [[0, 4], [4, 18], [18, 26]]
+    );
+  });
+
+  it('gives each beat the expression its own text implies', () => {
+    const windows = shortFormMascotWindows([
+      { kind: 'hook', text: 'Why does this happen', start: 0, end: 4 },
+      { kind: 'mechanism', text: 'Because your brain reacts', start: 4, end: 18 },
+      { kind: 'reframe', text: 'Remember your power', start: 18, end: 26 },
+    ]);
+    assert.deepEqual(windows.map((w) => w.emotion), ['surprised', 'thinking', 'knowing']);
   });
 });

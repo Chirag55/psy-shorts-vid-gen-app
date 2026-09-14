@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, View } from 'react-native';
+import { Alert, InteractionManager, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Badge, Body, Button, Card, Divider, Field, H2, H3, Row, Screen, Small } from '@/components/ui';
 import { colors, space } from '@/theme';
@@ -29,14 +29,28 @@ export default function SettingsScreen() {
   const [storage, setStorage] = useState(0);
 
   useEffect(() => {
+    let active = true;
+
     void (async () => {
-      setStored({ gemini: await getKey('gemini'), eleven: await getKey('elevenlabs') });
+      const [gemini, eleven] = await Promise.all([getKey('gemini'), getKey('elevenlabs')]);
+      if (active) setStored({ gemini, eleven });
+    })();
+
+    // Walking the workspace is synchronous filesystem work. Deferring it past
+    // the navigation animation keeps the screen from janking on open.
+    const task = InteractionManager.runAfterInteractions(() => {
+      if (!active) return;
       try {
         setStorage(workspaceSize());
       } catch {
         setStorage(0);
       }
-    })();
+    });
+
+    return () => {
+      active = false;
+      task.cancel();
+    };
   }, []);
 
   const saveKeys = async () => {

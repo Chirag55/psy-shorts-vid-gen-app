@@ -1,17 +1,20 @@
 /**
- * Expo config plugin for react-native-ffmpeg-kit.
+ * Android build tuning for FFmpeg and local storage.
  *
- * FFmpegKit was retired upstream in 2025 and its AAR artifacts were removed from
- * Maven Central, so the Gradle coordinate cannot be resolved remotely any more.
- * This plugin wires up what is needed to build against a locally vendored AAR:
+ * The FFmpeg dependency itself needs no help: @wokcito/ffmpeg-kit-react-native
+ * pins `io.github.jamaismagic.ffmpeg:ffmpeg-kit-main-16kb`, a republished build
+ * that is still live on Maven Central and compiled for 16 KB memory pages —
+ * which Android 15 and newer require. The original `com.arthenica` artifacts
+ * were withdrawn in 2025 and, being 4 KB-page builds, would fail to load on
+ * current devices even if they were still downloadable.
  *
- *   1. A `flatDir` repository over `android/libs/`, so Gradle can see an
- *      `ffmpeg-kit-*.aar` dropped there (see scripts/fetch-ffmpeg-aar.sh).
- *   2. The `ffmpegKitVariant` / `ffmpegKitPackage` Gradle properties, which the
- *      library reads via `project.hasProperty(...)`. `full-gpl` is the only
- *      variant that ships libass, and libass is what burns the kinetic ASS
- *      subtitles — a smaller variant renders video with no captions at all.
- *   3. An ABI filter, because the full-gpl AAR carries one large .so per ABI.
+ * What this plugin does add:
+ *   1. An ABI filter — the FFmpeg AAR carries a full native stack per ABI, and
+ *      shipping only the two ABIs real phones use roughly halves the APK.
+ *   2. A flatDir repository over android/libs, so a hand-built AAR can be
+ *      dropped in to override the published one without editing Gradle.
+ *   3. A larger AsyncStorage database, because word-level alignment data for a
+ *      backlog of projects outgrows the stingy 6 MB default.
  */
 const {
   withProjectBuildGradle,
@@ -19,37 +22,22 @@ const {
   withGradleProperties,
 } = require('expo/config-plugins');
 
-const VARIANT = 'full-gpl';
-const VERSION = '6.0-2';
-
 const FLATDIR_MARKER = 'mindfiles-flatdir';
 const ABI_MARKER = 'mindfiles-abi-filter';
 
-/**
- * The library resolves its variant through Gradle project properties, so these
- * belong in gradle.properties. An earlier version of this plugin appended them
- * to an `ext {}` block in build.gradle, which silently did nothing: the Expo
- * template has no such block, so the injection never matched.
- */
-const withFFmpegProperties = (config) =>
+const withStorageProperties = (config) =>
   withGradleProperties(config, (cfg) => {
     const upsert = (key, value) => {
       const existing = cfg.modResults.find((item) => item.type === 'property' && item.key === key);
-      if (existing) {
-        existing.value = value;
-      } else {
-        cfg.modResults.push({ type: 'property', key, value });
-      }
+      if (existing) existing.value = value;
+      else cfg.modResults.push({ type: 'property', key, value });
     };
 
-    upsert('ffmpegKitVariant', VARIANT);
-    upsert('ffmpegKitPackage', VARIANT);
-    upsert('ffmpegKitVersion', VERSION);
-
+    upsert('AsyncStorage_db_size_in_MB', '64');
     return cfg;
   });
 
-const withFFmpegFlatDir = (config) =>
+const withLocalAarOverride = (config) =>
   withProjectBuildGradle(config, (cfg) => {
     if (cfg.modResults.language !== 'groovy') {
       throw new Error('withFFmpegKit only supports a Groovy project build.gradle.');
@@ -58,7 +46,8 @@ const withFFmpegFlatDir = (config) =>
 
     cfg.modResults.contents += `
 
-// ${FLATDIR_MARKER}: resolve the vendored FFmpegKit AAR from android/libs
+// ${FLATDIR_MARKER}: optional override — an ffmpeg-kit-*.aar dropped into
+// android/libs is picked up in place of the published dependency.
 allprojects {
     repositories {
         flatDir {
@@ -70,7 +59,7 @@ allprojects {
     return cfg;
   });
 
-const withFFmpegAbiFilter = (config) =>
+const withAbiFilter = (config) =>
   withAppBuildGradle(config, (cfg) => {
     if (cfg.modResults.language !== 'groovy') {
       throw new Error('withFFmpegKit only supports a Groovy app build.gradle.');
@@ -80,8 +69,8 @@ const withFFmpegAbiFilter = (config) =>
     const updated = cfg.modResults.contents.replace(
       /defaultConfig\s*\{/,
       `defaultConfig {
-        // ${ABI_MARKER}: the full-gpl AAR ships one large .so per ABI; only ship
-        // the two that real Android phones use.
+        // ${ABI_MARKER}: FFmpeg ships a full native stack per ABI; only the two
+        // that real Android phones use are worth packaging.
         ndk {
             abiFilters "arm64-v8a", "armeabi-v7a"
         }`
@@ -95,4 +84,4 @@ const withFFmpegAbiFilter = (config) =>
     return cfg;
   });
 
-module.exports = (config) => withFFmpegAbiFilter(withFFmpegFlatDir(withFFmpegProperties(config)));
+module.exports = (config) => withAbiFilter(withLocalAarOverride(withStorageProperties(config)));

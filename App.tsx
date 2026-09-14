@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { colors } from '@/theme';
 import Navigation from '@/navigation';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useStudio } from '@/store';
 import { workspaceRoot } from '@/services/workspace';
 
@@ -38,9 +39,11 @@ export default function App() {
       <SafeAreaProvider>
         <StatusBar barStyle="light-content" backgroundColor={colors.surface} />
         {hydrated ? (
-          <NavigationContainer theme={theme}>
-            <Navigation />
-          </NavigationContainer>
+          <ErrorBoundary>
+            <NavigationContainer theme={theme}>
+              <Navigation />
+            </NavigationContainer>
+          </ErrorBoundary>
         ) : (
           <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
             <ActivityIndicator color={colors.accent} />

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useRoute, type RouteProp } from '@react-navigation/native';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -21,19 +21,39 @@ export default function AssemblyScreen() {
   const [step, setStep] = useState('');
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
-  const logRef = useRef<ScrollView>(null);
+
+  // A render outlives the screen if the user navigates away, so every state
+  // write is gated on the component still being mounted.
+  const mounted = useRef(true);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(
+    () => () => {
+      mounted.current = false;
+      abortRef.current?.abort();
+    },
+    []
+  );
 
   const player = useVideoPlayer(project?.assets.finalVideo ?? null);
 
   if (!project) return <Screen><Empty title="Project not found" /></Screen>;
 
-  const appendLog = (line: string) => {
-    // FFmpeg is extremely chatty; keeping a bounded tail avoids pinning tens of
-    // thousands of strings in memory during a long render.
-    setLogs((prev) => [...prev.slice(-200), line]);
-  };
+  // Lines arrive pre-batched from the FFmpeg wrapper; keep only a bounded tail
+  // so a long render cannot pin tens of thousands of strings in memory.
+  const appendLogs = useCallback((lines: string[]) => {
+    if (!mounted.current) return;
+    setLogs((prev) => [...prev, ...lines].slice(-200));
+  }, []);
 
   const render = async () => {
+    // Guard re-entry: a double tap would otherwise start two FFmpeg sessions
+    // writing to the same output file.
+    if (rendering) return;
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setRendering(true);
     setLogs([]);
     setProgress(0);
@@ -45,8 +65,10 @@ export default function AssemblyScreen() {
         includeCaptions: settings.includeCaptions,
         draft: settings.draftRender,
         mascotAssets: settings.mascotAssets,
-        onLog: appendLog,
+        signal: controller.signal,
+        onLog: appendLogs,
         onProgress: (label: string, done: number, total: number) => {
+          if (!mounted.current) return;
           setStep(label);
           setProgress(total > 0 ? done / total : 0);
         },
@@ -54,15 +76,26 @@ export default function AssemblyScreen() {
 
       const uri = project.mode === 'short' ? await assembleShort(project, opts) : await assembleLongform(project, opts);
       patchAssets(project.id, { finalVideo: uri });
-      setStep('Complete');
-      setProgress(1);
+      if (mounted.current) {
+        setStep('Complete');
+        setProgress(1);
+      }
     } catch (e) {
-      if (e instanceof FFmpegError && e.logs) appendLog(e.logs.slice(-4000));
-      Alert.alert('Render failed', e instanceof Error ? e.message : String(e));
-      setStep('Failed');
+      const cancelled = controller.signal.aborted;
+      if (e instanceof FFmpegError && e.logs) appendLogs(e.logs.slice(-4000).split('\n'));
+      if (mounted.current) {
+        if (!cancelled) Alert.alert('Render failed', e instanceof Error ? e.message : String(e));
+        setStep(cancelled ? 'Cancelled' : 'Failed');
+      }
     } finally {
-      setRendering(false);
+      abortRef.current = null;
+      if (mounted.current) setRendering(false);
     }
+  };
+
+  const cancel = () => {
+    abortRef.current?.abort();
+    void cancelAll();
   };
 
   const saveToGallery = async () => {
@@ -123,7 +156,9 @@ export default function AssemblyScreen() {
           <H3>Render</H3>
           <Badge
             label={step || 'idle'}
-            tone={step === 'Complete' ? 'ok' : step === 'Failed' ? 'danger' : rendering ? 'warn' : 'neutral'}
+            tone={
+              step === 'Complete' ? 'ok' : step === 'Failed' ? 'danger' : rendering || step === 'Cancelled' ? 'warn' : 'neutral'
+            }
           />
         </Row>
         <ProgressBar fraction={progress} />
@@ -134,7 +169,7 @@ export default function AssemblyScreen() {
             loading={rendering}
             style={{ flex: 1 }}
           />
-          {rendering ? <Button label="Cancel" variant="danger" onPress={() => void cancelAll()} /> : null}
+          {rendering ? <Button label="Cancel" variant="danger" onPress={cancel} /> : null}
         </Row>
       </Card>
 
@@ -154,7 +189,7 @@ export default function AssemblyScreen() {
       {logs.length ? (
         <Card>
           <H3>FFmpeg log</H3>
-          <ScrollView ref={logRef} style={s.logBox} nestedScrollEnabled>
+          <ScrollView style={s.logBox} nestedScrollEnabled>
             {logs.map((line, i) => (
               <Text key={i} style={s.logLine}>
                 {line}

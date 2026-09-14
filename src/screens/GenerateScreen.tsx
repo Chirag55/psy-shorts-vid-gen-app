@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -9,6 +9,7 @@ import { getKey } from '@/services/keys';
 import { generateLongScript, generateShortScript } from '@/services/gemini';
 import { validateScript } from '@/core/guardrails';
 import type { RootStackParamList } from '@/navigation/types';
+import { useMounted } from '@/util/useMounted';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -35,8 +36,14 @@ export default function GenerateScreen() {
   const [category, setCategory] = useState(route.params.category ?? CATEGORIES[0]);
   const [chapters, setChapters] = useState('4');
   const [busy, setBusy] = useState(false);
+  const mounted = useMounted();
+  // Synchronous guard: two taps in one tick would both pass a state check and
+  // bill two generations.
+  const busyRef = useRef(false);
 
   const generate = async () => {
+    if (busyRef.current) return;
+
     if (!topic.trim()) {
       Alert.alert('Topic required', 'Give the generator a specific psychological pattern to work from.');
       return;
@@ -48,6 +55,7 @@ export default function GenerateScreen() {
       return;
     }
 
+    busyRef.current = true;
     setBusy(true);
     try {
       const archetypes = recentArchetypes();
@@ -86,9 +94,10 @@ export default function GenerateScreen() {
         proceed();
       }
     } catch (e) {
-      Alert.alert('Generation failed', e instanceof Error ? e.message : String(e));
+      if (mounted.current) Alert.alert('Generation failed', e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(false);
+      busyRef.current = false;
+      if (mounted.current) setBusy(false);
     }
   };
 

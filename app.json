@@ -14,16 +14,23 @@
       "package": "com.mindfiles.studio",
       "versionCode": 1,
       "permissions": [
-        "android.permission.INTERNET",
-        "android.permission.READ_MEDIA_VIDEO",
-        "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.INTERNET"
+      ],
+      "blockedPermissions": [
         "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.READ_EXTERNAL_STORAGE"
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_MEDIA_LOCATION"
       ]
     },
     "plugins": [
-      "expo-secure-store",
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": false
+        }
+      ],
       "expo-audio",
       "expo-video",
       "expo-web-browser",
@@ -33,7 +40,7 @@
         {
           "photosPermission": "The Mind Files Studio saves rendered videos and thumbnails to your gallery.",
           "savePhotosPermission": "The Mind Files Studio saves rendered videos and thumbnails to your gallery.",
-          "isAccessMediaLocationEnabled": true
+          "isAccessMediaLocationEnabled": false
         }
       ],
       [
@@ -51,7 +58,8 @@
           }
         }
       ],
-      "./plugins/withFFmpegKit.js"
+      "./plugins/withFFmpegKit.js",
+      "./plugins/withPrivacyHardening.js"
     ],
     "extra": {
       "eas": {

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRoute, type RouteProp } from '@react-navigation/native';
 import { useAudioPlayer } from 'expo-audio';
@@ -27,6 +27,21 @@ export default function VoiceScreen() {
 
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [playingKey, setPlayingKey] = useState<string | null>(null);
+
+  const mounted = useRef(true);
+  const playTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A ref, not state: two taps landing in the same render tick would both read
+  // a stale `false` from state and fire two paid synthesis requests.
+  const busyRef = useRef(false);
+
+  useEffect(
+    () => () => {
+      mounted.current = false;
+      // A pending play() would otherwise fire against a released native player.
+      if (playTimer.current) clearTimeout(playTimer.current);
+    },
+    []
+  );
 
   const tracks = useMemo<Track[]>(() => {
     if (!project) return [];
@@ -58,6 +73,8 @@ export default function VoiceScreen() {
   );
 
   const synthesise = async (track: Track, force: boolean) => {
+    if (busyRef.current) return;
+
     if (project.assets.audio[track.key] && !force) {
       Alert.alert('Already voiced', 'Re-synthesising spends characters again.', [
         { text: 'Cancel', style: 'cancel' },
@@ -74,12 +91,19 @@ export default function VoiceScreen() {
 
     // Pre-flight the spend before the request goes out — this is the only point
     // at which an over-budget synthesis can still be stopped for free.
-    const check = checkVoiceQuota(track.text, settings.voiceCharsUsed, settings.voiceCharLimit);
+    //
+    // Usage is read live from the store rather than from this render's closure:
+    // "Synthesise all" loops through tracks without re-rendering, so a captured
+    // value would still show the usage from before the first track and let the
+    // batch sail past the ceiling.
+    const live = useStudio.getState().settings;
+    const check = checkVoiceQuota(track.text, live.voiceCharsUsed, live.voiceCharLimit);
     if (!check.allowed) {
       Alert.alert('Quota guard', check.reason ?? 'Not enough characters remaining.');
       return;
     }
 
+    busyRef.current = true;
     setBusyKey(track.key);
     try {
       const result = await synthesiseChapter({
@@ -97,16 +121,22 @@ export default function VoiceScreen() {
         const sub = await fetchSubscription(apiKey);
         updateSettings({ voiceCharsUsed: sub.characterCount, voiceCharLimit: sub.characterLimit });
       } catch {
-        updateSettings({ voiceCharsUsed: settings.voiceCharsUsed + result.charactersUsed });
+        // Offline: fall back to incrementing the locally tracked spend.
+        updateSettings({
+          voiceCharsUsed: useStudio.getState().settings.voiceCharsUsed + result.charactersUsed,
+        });
       }
     } catch (e) {
       Alert.alert('Synthesis failed', e instanceof Error ? e.message : String(e));
     } finally {
-      setBusyKey(null);
+      busyRef.current = false;
+      if (mounted.current) setBusyKey(null);
     }
   };
 
   const synthesiseAll = async () => {
+    if (busyRef.current) return;
+
     const pending = tracks.filter((t) => !project.assets.audio[t.key]);
     if (!pending.length) {
       Alert.alert('Nothing pending', 'Every track already has a voiceover.');
@@ -118,19 +148,25 @@ export default function VoiceScreen() {
       return;
     }
     for (const track of pending) {
+      if (!mounted.current) return;
       await synthesise(track, false);
     }
   };
 
   const togglePlay = (key: string) => {
+    if (playTimer.current) clearTimeout(playTimer.current);
+
     if (playingKey === key) {
       player?.pause();
       setPlayingKey(null);
-    } else {
-      setPlayingKey(key);
-      // The player source swaps on the next render, so start playback after it settles.
-      setTimeout(() => player?.play(), 120);
+      return;
     }
+
+    setPlayingKey(key);
+    // The player source swaps on the next render, so start playback once it settles.
+    playTimer.current = setTimeout(() => {
+      if (mounted.current) player?.play();
+    }, 150);
   };
 
   return (

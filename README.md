@@ -30,7 +30,7 @@ the app's private storage on this device.
   flagged in the UI if ever missing.
 - **Character-to-word alignment** — ElevenLabs returns per-character timestamps;
   these are folded into word boundaries before any subtitle is built.
-- **Kinetic ASS subtitles** — word-level neon-yellow highlight on the 1080×1920
+- **Kinetic captions** — word-level neon-yellow highlight on the 1080×1920
   Shorts canvas, phrase-level chunks with a scrub-bar-safe margin on 1920×1080.
 - **Ken Burns connective stills** — the four pan/zoom filters, with
   `Duration_Still = max(Audio − (HeroA + HeroB), 2.0)`.
@@ -55,66 +55,65 @@ the app's private storage on this device.
   source JPGs work as-is with no pre-processing.
 - **Renders default to 720p draft quality.** Phones throttle hard under a long
   encode. Turn it off in Assembly for a full-resolution render.
+- **Captions are drawn with Skia and composited, not burned by FFmpeg's `ass`
+  filter.** Every Android FFmpeg build still distributable today is compiled
+  without libass, freetype and fontconfig, so no text filter is available at
+  all. Drawing them directly turned out to give better control anyway, and a
+  `.ass` sidecar is still written for the desktop studio to consume.
+  [`docs/FFMPEG.md`](docs/FFMPEG.md) has the detail.
 
 ---
 
-## Setup
+## Getting it on your phone
 
-### 1. Prerequisites
-
-- Node 20+ and npm
-- Android Studio / Android SDK, with a device in USB debugging mode
-- **An FFmpegKit `full-gpl` AAR** — this needs one manual step, and
-  [`docs/FFMPEG.md`](docs/FFMPEG.md) explains exactly why and how
+### 1. Build and install
 
 ```bash
 npm install
-./scripts/install-ffmpeg-aar.sh /path/to/ffmpeg-kit-full-gpl-6.0-2.aar
+npm run prebuild
+npm run android      # phone connected by USB, developer mode on
 ```
 
-### 2. Build and install
+That's it. FFmpeg resolves as a normal Gradle dependency — there is no binary to
+source by hand. (There used to be; `docs/FFMPEG.md` explains what changed and why.)
 
-This app cannot run in Expo Go — FFmpegKit is a native module, so it needs a
-real build.
+The app cannot run in Expo Go, because FFmpeg and Skia are native modules. It
+needs a real build.
 
-```bash
-npm run prebuild        # generates android/ and applies the FFmpeg config plugin
-npm run android         # builds and installs onto the connected device
-```
-
-For a standalone APK you can reinstall without a computer:
+**For an APK you can reinstall without a computer:**
 
 ```bash
+npx eas login
 npx eas build --profile preview --platform android
 ```
 
-### 3. Add your keys
+EAS builds in the cloud and gives you a download link. The `preview` profile is
+already configured to emit an installable APK.
+
+### 2. Add your keys
 
 Open **Settings** in the app:
 
-- **Gemini API key** — used for scripts, topic ideas and Imagen stills
-- **ElevenLabs API key** — used for narration and word alignment
+- **Gemini API key** — scripts, topic ideas and Imagen stills
+- **ElevenLabs API key** — narration and word alignment
 - **Professor Hoot expressions** — import `base`, `surprised`, `thinking` and
   `knowing` from your desktop assets
 
-Keys are verified against the live API before being saved, and stored in the
-Android keystore via `expo-secure-store`. They never leave the device except as
-auth headers to those APIs.
+Keys are checked against the live API before they are saved, and stored in the
+Android keystore. See [`docs/SAFETY.md`](docs/SAFETY.md) for exactly where your
+data goes.
 
-### 4. YouTube publishing (optional)
+### 3. YouTube publishing (optional, do it later)
+
+Everything except publishing works without this.
 
 In Google Cloud Console, create an OAuth client of type **Android** with package
-name `com.mindfiles.studio`, then paste its client ID on the Publish screen.
+name `com.mindfiles.studio`, enable the YouTube Data API v3, add the
+`youtube.upload` and `youtube` scopes to the consent screen, and add your own
+account as a test user. Paste the client ID on the Publish screen.
 
-Android OAuth clients issue no client secret — the flow is PKCE-based — which is
-what makes on-device publishing safe. There is no high-privilege credential
-inside the APK for anyone to extract.
-
-You will also need the OAuth consent screen configured with the
-`youtube.upload` and `youtube` scopes, and your own account added as a test user
-while the app is unverified.
-
----
+Android OAuth clients issue no client secret, so nothing sensitive ends up
+inside the APK.
 
 ## Project layout
 
@@ -122,7 +121,8 @@ while the app is unverified.
 src/
 ├── core/                 Pure logic — no I/O, fully unit tested
 │   ├── alignment.ts      Character timestamps → word boundaries
-│   ├── ass.ts            ASS subtitle generation, both canvases
+│   ├── captions.ts       Word timings → gapless caption frame timeline
+│   ├── ass.ts            .ass sidecar generation for the desktop studio
 │   ├── kenburns.ts       Pan/zoom filters, still duration, tempo math
 │   ├── mascot.ts         Hoot emotion state machine and overlay windows
 │   ├── guardrails.ts     Word caps, cadence math, quota pre-flight
@@ -133,7 +133,8 @@ src/
 │   ├── gemini.ts         Script and topic generation
 │   ├── elevenlabs.ts     Synthesis with timestamps, quota
 │   ├── imagen.ts         Connective still generation
-│   ├── ffmpeg.ts         Typed FFmpegKit wrapper, probing, log capture
+│   ├── ffmpeg.ts         Typed FFmpegKit wrapper, probing, batched log capture
+│   ├── captionRenderer.ts Skia caption frames → transparent PNG sequence
 │   ├── assembler.ts      Short and long-form assembly pipelines
 │   ├── youtube.ts        OAuth PKCE + resumable upload
 │   ├── workspace.ts      On-device mirror of the desktop outputs/ tree
@@ -147,7 +148,7 @@ src/
 ported algorithms be tested directly:
 
 ```bash
-npm test          # 70 tests over the ported math
+npm test          # 82 tests over the ported math and caption timeline
 npm run typecheck
 ```
 
@@ -172,6 +173,14 @@ Long-pressing a project in the Studio list deletes both the project and its
 files. Settings shows the total workspace size.
 
 ---
+
+## Safety
+
+[`docs/SAFETY.md`](docs/SAFETY.md) documents every network destination, where
+credentials live, the manifest hardening applied, and the specific crash, ANR
+and double-billing defects that were found and fixed. Short version: six vendor
+hosts, no telemetry, keys in the Android keystore, and device backup disabled so
+they cannot be copied to Google Drive.
 
 ## Known constraints
 

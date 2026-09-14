@@ -1,104 +1,84 @@
 # FFmpeg on the device
 
-This app renders video entirely on your phone. That means it needs an FFmpeg
-binary compiled for Android, exposed to JavaScript. There is one complication
-worth understanding before you build.
+**You don't need to do anything for this.** It installs automatically with
+`npm install`. This page explains why it's set up the way it is, and what to do
+in the unlikely case it ever breaks.
 
-## The situation
+## Background
 
 [FFmpegKit](https://github.com/arthenica/ffmpeg-kit) was the standard way to run
 FFmpeg from React Native. Its author retired the project in January 2025 and the
-prebuilt artifacts were pulled from Maven Central in April 2025. As of this
-writing, `com.arthenica:ffmpeg-kit-full-gpl:6.0-2` returns 404 from Maven
-Central, Maven Apache, and JitPack.
+prebuilt artifacts were pulled from Maven Central that April. Every
+`com.arthenica:ffmpeg-kit-*` coordinate now returns 404 — verified against Maven
+Central, Maven Apache and JitPack.
 
-The JavaScript binding still works — this app uses the actively maintained
-[`react-native-ffmpeg-kit`](https://www.npmjs.com/package/react-native-ffmpeg-kit)
-fork, which reads a locally vendored AAR from `android/libs/` before falling
-back to the (now dead) Maven coordinate.
+There is a second, quieter problem with those old artifacts. Android 15 moved to
+**16 KB memory pages**, and native libraries built for 4 KB pages fail to load on
+devices using them. The withdrawn `6.0-2` builds are 4 KB. Even with a copy in
+hand, they would crash on a current phone.
 
-So: **you supply the AAR once, and the build works from then on.**
+## What this app uses instead
 
-## Which variant you need
+`@wokcito/ffmpeg-kit-react-native`, which pins
+`io.github.jamaismagic.ffmpeg:ffmpeg-kit-main-16kb:6.1.4` — a republished build
+that is live on Maven Central and compiled for 16 KB pages. Gradle resolves it
+like any normal dependency. Nothing to download by hand.
 
-`full-gpl`. Not `https`, not `min`, not `full`.
+It ships x264, x265, dav1d, libvpx, lame, gnutls and Android MediaCodec, which
+covers everything the render pipeline needs.
 
-The variant matters because of one library: **libass**. The kinetic word-level
-subtitles are ASS format, burned in by FFmpeg's `ass` filter, which requires
-libass. Only `full` and `full-gpl` bundle it, and `full-gpl` additionally
-carries x264, which the H.264 encode path uses.
+## Why captions are drawn as images
 
-Pick a smaller variant and the renders come out silent-captioned — video and
-audio fine, no text.
+That build — and every other still-distributable Android FFmpeg build we could
+find — is compiled **without libass, freetype and fontconfig**. You can confirm
+this from the binary itself; its own configuration string has no
+`--enable-libass`, and it reports "freetype is not available" at runtime.
 
-> Licensing note: the `-gpl` variants link GPL-licensed components, so the
-> resulting APK is effectively GPL. That is fine for a personal build you install
-> on your own device. It would matter if you distributed the APK.
+That makes FFmpeg's `ass`, `subtitles` and `drawtext` filters all unavailable.
+There is no Android FFmpeg distribution left that can render text.
 
-## Getting the AAR
+So the app draws captions itself:
 
-Two honest options. There is no official download link to give you any more.
+1. `src/core/captions.ts` turns word timings into a gapless sequence of caption
+   frames — which words are on screen, which one is highlighted, and for how long.
+2. `src/services/captionRenderer.ts` draws each frame with Skia into a
+   transparent PNG band, using the real neon-yellow-on-white styling with a
+   black outline.
+3. The assembler feeds that sequence to FFmpeg through the concat demuxer and
+   composites it with a single `overlay`.
 
-### Option 1 — a mirror you trust
+This turned out better than the filter it replaced:
 
-Copies of `ffmpeg-kit-full-gpl-6.0-2.aar` exist in Gradle caches, forks, and
-third-party mirrors. If you have ever built an app against FFmpegKit on this
-machine, check your own Gradle cache first — this is the safest source, because
-it is a file you already used:
+- The caption look is under direct control rather than constrained by ASS style
+  fields.
+- Only a band is rendered (1080×360 rather than 1080×1920), so it is less pixel
+  work per frame.
+- There is no font dependency to go missing on a particular device.
 
-```bash
-find ~/.gradle/caches -name 'ffmpeg-kit-full-gpl*.aar' 2>/dev/null
-```
+A `.ass` sidecar is still written next to every render. Nothing on the phone
+reads it — it is there so a project started on mobile can be finished in the
+desktop studio, which does have libass.
 
-Then install it:
+## If it ever breaks
 
-```bash
-./scripts/install-ffmpeg-aar.sh ~/.gradle/caches/.../ffmpeg-kit-full-gpl-6.0-2.aar
-```
+If that republished artifact is withdrawn too, the config plugin leaves a
+`flatDir` repository over `android/libs/`. Drop any `ffmpeg-kit-*.aar` there and
+Gradle prefers it over the published dependency — no Gradle editing needed.
 
-The script verifies the file is a real AAR containing `classes.jar` and
-`libffmpegkit.so`, and warns if libass is absent. It deliberately does not
-download from a hardcoded mirror: this binary ships inside your APK, and
-fetching it from a URL picked by someone else is a supply-chain risk you should
-choose knowingly rather than inherit from a script.
-
-### Option 2 — build it from source
-
-The upstream build scripts still work and produce exactly the artifact you need:
+To build one from source:
 
 ```bash
 git clone https://github.com/arthenica/ffmpeg-kit.git
 cd ffmpeg-kit
-./android.sh --enable-gpl --enable-x264 --enable-libass --enable-freetype --enable-fribidi
+./android.sh --enable-gpl --enable-x264
 ```
 
-Requires the Android NDK and takes a while. The output lands in
-`prebuilt/bundle-android-aar/ffmpeg-kit/ffmpeg-kit.aar`. Rename it to
-`ffmpeg-kit-full-gpl-6.0-2.aar` and install it with the script above.
+## What the config plugin does
 
-## How the build finds it
+`plugins/withFFmpegKit.js`, during `expo prebuild`:
 
-`plugins/withFFmpegKit.js` is an Expo config plugin that does three things
-during `expo prebuild`:
-
-| What | Where it lands | Why |
+| What | Where | Why |
 | :--- | :--- | :--- |
-| `flatDir` repository over `android/libs` | `android/build.gradle` | Lets Gradle resolve a bare `.aar` file as a dependency |
-| `ffmpegKitVariant` / `ffmpegKitPackage` / `ffmpegKitVersion` | `android/gradle.properties` | The library reads these via `project.hasProperty(...)` |
-| `abiFilters "arm64-v8a", "armeabi-v7a"` | `android/app/build.gradle` | full-gpl ships a large `.so` per ABI; two keeps the APK sane |
-
-These are Gradle *properties*, not `ext {}` entries — the Expo SDK 57 template
-has no `ext` block, so an `ext` injection would silently do nothing.
-
-## Verifying it worked
-
-After `npm run prebuild`:
-
-```bash
-ls android/libs/                          # your AAR
-grep ffmpegKit android/gradle.properties  # three properties
-grep -c mindfiles-flatdir android/build.gradle
-```
-
-At runtime, the Assembly screen streams FFmpeg's own log output. If the library
-failed to link you will see the failure there rather than a silent no-op.
+| `abiFilters "arm64-v8a", "armeabi-v7a"` | `android/app/build.gradle` | FFmpeg ships a full native stack per ABI; two keeps the APK roughly half the size |
+| `flatDir` over `android/libs` | `android/build.gradle` | Escape hatch for a hand-built AAR |
+| `AsyncStorage_db_size_in_MB=64` | `android/gradle.properties` | Word-level alignment across a backlog of projects outgrows the 6 MB default |

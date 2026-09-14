@@ -71,8 +71,3 @@ export function groupIntoPhrases(words: WordTiming[], size = 4): WordTiming[][] 
 
   return phrases;
 }
-
-/** Total spoken duration implied by an alignment, used for chapter sync math. */
-export function alignmentDuration(words: WordTiming[]): number {
-  return words.length ? words[words.length - 1].end : 0;
-}
