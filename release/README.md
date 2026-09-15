@@ -1,6 +1,6 @@
 # Installable build
 
-`mindfiles-studio-v1.0.0-arm64.apk` — signed, ready to sideload.
+`mindfiles-studio-v1.0.1-arm64.apk` — signed, ready to sideload.
 
 ## Install it
 
@@ -16,15 +16,28 @@ Verify the download if you want to:
 sha256sum -c SHA256SUMS
 ```
 
+## What changed in 1.0.1
+
+- **Fixed the app failing to launch.** No native module is loaded while the JS
+  bundle is being evaluated any more; FFmpeg and Skia are required only when a
+  render starts.
+- **Startup errors are now visible.** If anything fails during startup, the app
+  shows the message and stack instead of closing silently.
+- **New Library tab** listing everything published to the channel, read back
+  through the YouTube Data API.
+
+Installing over 1.0.0 keeps your projects and keys — same signing key, same
+package name.
+
 ## About this build
 
 | | |
 | :--- | :--- |
-| Version | 1.0.0 (versionCode 1) |
+| Version | 1.0.1 (versionCode 1) |
 | Package | `com.mindfiles.studio` |
 | Architecture | `arm64-v8a` only — see below |
 | Min Android | 7.0 (API 24) |
-| Size | 68 MB |
+| Size | 67 MB |
 | Signing | Android debug keystore — see `../docs/SAFETY.md` |
 
 **arm64-v8a only** is deliberate. The FFmpeg library ships its JNI entry point
