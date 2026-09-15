@@ -1,6 +1,6 @@
 # Installable build
 
-`mindfiles-studio-v1.0.1-arm64.apk` — signed, ready to sideload.
+`mindfiles-studio-v1.1.0-arm64.apk` — signed, ready to sideload.
 
 ## Install it
 
@@ -15,6 +15,19 @@ Verify the download if you want to:
 ```bash
 sha256sum -c SHA256SUMS
 ```
+
+## What changed in 1.1.0
+
+- **Fixed Gemini 404s.** The model id was hardcoded and Google retired it.
+  Settings now lists the models your key can actually call.
+- **Fixed ElevenLabs keys being rejected.** A key scoped to text-to-speech was
+  reported invalid, and — worse — a failed check refused to save it at all. Keys
+  are now always saved; verification only warns.
+- **Claude or Gemini** for script and topic generation, chosen in Settings.
+- **YouTube API key support** — browse published uploads and channel stats with
+  no sign-in.
+- **Scripts informed by results** — your best and worst performing titles feed
+  into generation when YouTube is connected.
 
 ## What changed in 1.0.1
 
@@ -33,7 +46,7 @@ package name.
 
 | | |
 | :--- | :--- |
-| Version | 1.0.1 (versionCode 1) |
+| Version | 1.1.0 (versionCode 1) |
 | Package | `com.mindfiles.studio` |
 | Architecture | `arm64-v8a` only — see below |
 | Min Android | 7.0 (API 24) |
