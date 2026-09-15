@@ -1,5 +1,47 @@
-import { FFmpegKit, FFprobeKit, ReturnCode, type FFmpegSession, type Log } from '@wokcito/ffmpeg-kit-react-native';
+import type { FFmpegSession, Log } from '@wokcito/ffmpeg-kit-react-native';
 import { toFsPath } from './workspace';
+
+/**
+ * FFmpegKit is loaded lazily, never at import time.
+ *
+ * Its module body instantiates a NativeEventEmitter in a static class field,
+ * which runs the moment the module is required. It is a legacy (non-Turbo)
+ * native module, so under the New Architecture that construction is the kind of
+ * thing that can throw while the JS bundle is still being evaluated — before
+ * React mounts, before any error boundary exists, which presents as the app
+ * failing to launch at all with nothing to show for it.
+ *
+ * Deferring the require moves any such failure to the moment a render actually
+ * starts, where it surfaces as a normal, readable error on the Assembly screen
+ * and the rest of the app keeps working.
+ */
+type FFmpegKitModule = typeof import('@wokcito/ffmpeg-kit-react-native');
+
+let cachedKit: FFmpegKitModule | null = null;
+
+function kit(): FFmpegKitModule {
+  if (!cachedKit) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      cachedKit = require('@wokcito/ffmpeg-kit-react-native') as FFmpegKitModule;
+    } catch (error) {
+      throw new FFmpegError(
+        'The FFmpeg native module could not be loaded. Reinstall the app; if it persists the build is missing its native libraries.',
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+  }
+  return cachedKit;
+}
+
+/** True when FFmpeg can be loaded — lets the UI warn before a long render. */
+export function isFFmpegAvailable(): boolean {
+  try {
+    return typeof kit().FFmpegKit?.executeWithArgumentsAsync === 'function';
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Typed wrapper over FFmpegKit.
@@ -53,17 +95,17 @@ export async function run(args: string[], options: RunOptions = {}): Promise<voi
       const timeout = setTimeout(() => {
         if (settled) return;
         settled = true;
-        void FFmpegKit.cancel();
+        void kit().FFmpegKit.cancel();
         reject(new FFmpegError('FFmpeg exceeded the 30 minute limit and was stopped.', buffer.join('\n')));
       }, SESSION_TIMEOUT_MS);
 
       const onAbort = () => {
         if (settled) return;
-        void FFmpegKit.cancel();
+        void kit().FFmpegKit.cancel();
       };
       options.signal?.addEventListener('abort', onAbort, { once: true });
 
-      FFmpegKit.executeWithArgumentsAsync(
+      kit().FFmpegKit.executeWithArgumentsAsync(
         args,
         (completed) => {
           if (settled) return;
@@ -87,6 +129,7 @@ export async function run(args: string[], options: RunOptions = {}): Promise<voi
     });
 
     const returnCode = await session.getReturnCode();
+    const { ReturnCode } = kit();
     if (!ReturnCode.isSuccess(returnCode)) {
       const logs = await session.getAllLogsAsString(2000).catch(() => buffer.join('\n'));
       throw new FFmpegError(
@@ -101,13 +144,13 @@ export async function run(args: string[], options: RunOptions = {}): Promise<voi
 }
 
 export async function cancelAll(): Promise<void> {
-  await FFmpegKit.cancel();
+  await kit().FFmpegKit.cancel();
 }
 
 /** Media duration in seconds. Returns 0 for anything unreadable. */
 export async function probeDuration(uri: string): Promise<number> {
   try {
-    const session = await FFprobeKit.executeWithArguments([
+    const session = await kit().FFprobeKit.executeWithArguments([
       '-v', 'error',
       '-show_entries', 'format=duration',
       '-of', 'default=noprint_wrappers=1:nokey=1',

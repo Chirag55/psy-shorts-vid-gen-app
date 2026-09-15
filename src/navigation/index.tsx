@@ -5,6 +5,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { colors } from '@/theme';
 import StudioHubScreen from '@/screens/StudioHubScreen';
 import SettingsScreen from '@/screens/SettingsScreen';
+import LibraryScreen from '@/screens/LibraryScreen';
 import GenerateScreen from '@/screens/GenerateScreen';
 import ProjectScreen from '@/screens/ProjectScreen';
 import StoryboardScreen from '@/screens/StoryboardScreen';
@@ -42,6 +43,15 @@ function TabsNavigator() {
           title: 'Studio',
           headerShown: false,
           tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>🎬</Text>,
+        }}
+      />
+      <Tabs.Screen
+        name="Library"
+        component={LibraryScreen}
+        options={{
+          title: 'Library',
+          headerShown: false,
+          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>📺</Text>,
         }}
       />
       <Tabs.Screen

@@ -1,12 +1,21 @@
-import {
-  Skia,
-  PaintStyle,
-  FontStyle,
-  ImageFormat,
-  type SkFont,
-  type SkSurface,
-  type SkTypeface,
-} from '@shopify/react-native-skia';
+import type { SkFont, SkSurface, SkTypeface } from '@shopify/react-native-skia';
+
+/**
+ * Skia is required lazily for the same reason as FFmpeg: nothing native should
+ * load while the JS bundle is still being evaluated, because a failure there
+ * kills the app before any error boundary exists to report it.
+ */
+type SkiaModule = typeof import('@shopify/react-native-skia');
+
+let cachedSkia: SkiaModule | null = null;
+
+function skia(): SkiaModule {
+  if (!cachedSkia) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    cachedSkia = require('@shopify/react-native-skia') as SkiaModule;
+  }
+  return cachedSkia;
+}
 import { Directory, File } from 'expo-file-system';
 import { isBlank, type CaptionFrame } from '@/core/captions';
 import { bucketDir } from './workspace';
@@ -63,6 +72,7 @@ function loadFont(size: number): SkFont {
   // device does not have, and the condensed face is not present on every
   // Android build — so fall all the way through to Skia's default rather than
   // handing a null typeface to Skia.Font.
+  const { Skia, FontStyle } = skia();
   try {
     const fontMgr = Skia.FontMgr.System();
     const typeface =
@@ -131,6 +141,8 @@ export async function renderCaptionFrames(opts: RenderCaptionsOptions): Promise<
   const fallbackCharWidth = style.fontSize * 0.55;
   const maxTextWidth = style.width - style.sidePadding * 2;
   const lineHeight = style.fontSize + style.lineGap;
+
+  const { Skia, PaintStyle, ImageFormat } = skia();
 
   const fill = Skia.Paint();
   fill.setStyle(PaintStyle.Fill);

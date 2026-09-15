@@ -23,6 +23,7 @@ the app's private storage on this device.
 | **Assembly** | On-device FFmpeg render with live log, per-chapter sync, burned captions, mascot overlay |
 | **Thumbnail** | Candidate frames sampled from the render, two-line headline composer, export at full canvas size |
 | **Publish** | Google OAuth, resumable upload, auto-filled chapter timestamps, privacy selector |
+| **Library** | Everything the channel has published, read back from the YouTube Data API — Shorts/All filter, views, likes, comments, privacy state, tap to open |
 
 ### What it faithfully reproduces from the desktop spec
 
@@ -136,7 +137,7 @@ src/
 │   ├── ffmpeg.ts         Typed FFmpegKit wrapper, probing, batched log capture
 │   ├── captionRenderer.ts Skia caption frames → transparent PNG sequence
 │   ├── assembler.ts      Short and long-form assembly pipelines
-│   ├── youtube.ts        OAuth PKCE + resumable upload
+│   ├── youtube.ts        OAuth PKCE, resumable upload, channel and uploads listing
 │   ├── workspace.ts      On-device mirror of the desktop outputs/ tree
 │   └── keys.ts           Secure credential storage
 ├── screens/              One file per screen
@@ -148,7 +149,7 @@ src/
 ported algorithms be tested directly:
 
 ```bash
-npm test          # 82 tests over the ported math and caption timeline
+npm test          # 108 tests over the ported math, caption timeline and library parsing
 npm run typecheck
 ```
 

@@ -1,5 +1,6 @@
 import * as AuthSession from 'expo-auth-session';
 import { File, UploadType } from 'expo-file-system';
+import { parseIso8601Duration, pickThumbnail, type UploadedVideo } from '@/core/youtubeLibrary';
 
 /**
  * YouTube Data API v3 publishing, driven entirely from the device.
@@ -199,4 +200,143 @@ export async function setThumbnail(accessToken: string, videoId: string, imageUr
 
 export function watchUrl(videoId: string): string {
   return `https://www.youtube.com/watch?v=${videoId}`;
+}
+
+export function shortsUrl(videoId: string): string {
+  return `https://www.youtube.com/shorts/${videoId}`;
+}
+
+const API = 'https://www.googleapis.com/youtube/v3';
+
+async function api<T>(accessToken: string, path: string, params: Record<string, string>): Promise<T> {
+  const query = new URLSearchParams(params).toString();
+  const res = await fetch(`${API}/${path}?${query}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new YouTubeError(`YouTube ${res.status}: ${detail.slice(0, 300) || res.statusText}`);
+  }
+  return (await res.json()) as T;
+}
+
+export interface ChannelSummary {
+  channelId: string;
+  title: string;
+  uploadsPlaylistId: string;
+  subscriberCount: number;
+  videoCount: number;
+  viewCount: number;
+  thumbnailUrl: string;
+}
+
+/**
+ * Resolves the signed-in channel and its uploads playlist.
+ *
+ * Every upload a channel has ever made lives in one auto-maintained playlist,
+ * and paging that is far cheaper in quota than search.list — 1 unit per page
+ * against 100 per search.
+ */
+export async function fetchMyChannel(accessToken: string): Promise<ChannelSummary> {
+  const data = await api<{
+    items?: Array<{
+      id: string;
+      snippet?: { title?: string; thumbnails?: Record<string, { url?: string }> };
+      contentDetails?: { relatedPlaylists?: { uploads?: string } };
+      statistics?: { subscriberCount?: string; videoCount?: string; viewCount?: string };
+    }>;
+  }>(accessToken, 'channels', {
+    part: 'snippet,contentDetails,statistics',
+    mine: 'true',
+  });
+
+  const channel = data.items?.[0];
+  if (!channel) throw new YouTubeError('This Google account has no YouTube channel.');
+
+  const uploads = channel.contentDetails?.relatedPlaylists?.uploads;
+  if (!uploads) throw new YouTubeError('Could not find the channel uploads playlist.');
+
+  return {
+    channelId: channel.id,
+    title: channel.snippet?.title ?? 'My channel',
+    uploadsPlaylistId: uploads,
+    subscriberCount: Number(channel.statistics?.subscriberCount ?? 0),
+    videoCount: Number(channel.statistics?.videoCount ?? 0),
+    viewCount: Number(channel.statistics?.viewCount ?? 0),
+    thumbnailUrl: pickThumbnail(channel.snippet?.thumbnails),
+  };
+}
+
+export interface UploadsPage {
+  videos: UploadedVideo[];
+  nextPageToken?: string;
+}
+
+/**
+ * Fetches one page of uploads with full details.
+ *
+ * playlistItems.list gives ids and snippets but neither duration nor stats, so
+ * a single batched videos.list follows — one call for the whole page rather than
+ * one per video, which matters against a 10,000 unit daily quota.
+ */
+export async function fetchUploadsPage(
+  accessToken: string,
+  uploadsPlaylistId: string,
+  pageToken?: string,
+  pageSize = 25
+): Promise<UploadsPage> {
+  const playlist = await api<{
+    nextPageToken?: string;
+    items?: Array<{ contentDetails?: { videoId?: string } }>;
+  }>(accessToken, 'playlistItems', {
+    part: 'contentDetails',
+    playlistId: uploadsPlaylistId,
+    maxResults: String(pageSize),
+    ...(pageToken ? { pageToken } : {}),
+  });
+
+  const ids = (playlist.items ?? [])
+    .map((item) => item.contentDetails?.videoId)
+    .filter((id): id is string => Boolean(id));
+
+  if (!ids.length) return { videos: [], nextPageToken: playlist.nextPageToken };
+
+  const details = await api<{
+    items?: Array<{
+      id: string;
+      snippet?: {
+        title?: string;
+        description?: string;
+        publishedAt?: string;
+        thumbnails?: Record<string, { url?: string }>;
+      };
+      contentDetails?: { duration?: string };
+      statistics?: { viewCount?: string; likeCount?: string; commentCount?: string };
+      status?: { privacyStatus?: string };
+    }>;
+  }>(accessToken, 'videos', {
+    part: 'snippet,contentDetails,statistics,status',
+    id: ids.join(','),
+  });
+
+  const videos: UploadedVideo[] = (details.items ?? []).map((item) => ({
+    videoId: item.id,
+    title: item.snippet?.title ?? '(untitled)',
+    description: item.snippet?.description ?? '',
+    publishedAt: item.snippet?.publishedAt ?? '',
+    thumbnailUrl: pickThumbnail(item.snippet?.thumbnails),
+    durationSeconds: parseIso8601Duration(item.contentDetails?.duration ?? ''),
+    viewCount: Number(item.statistics?.viewCount ?? 0),
+    likeCount: Number(item.statistics?.likeCount ?? 0),
+    commentCount: Number(item.statistics?.commentCount ?? 0),
+    privacyStatus: item.status?.privacyStatus ?? 'unknown',
+  }));
+
+  // videos.list does not guarantee the order ids were passed in, so restore the
+  // playlist's newest-first ordering.
+  const order = new Map(ids.map((id, i) => [id, i]));
+  videos.sort((a, b) => (order.get(a.videoId) ?? 0) - (order.get(b.videoId) ?? 0));
+
+  return { videos, nextPageToken: playlist.nextPageToken };
 }
