@@ -1,6 +1,6 @@
 # Installable build
 
-`mindfiles-studio-v1.2.0-arm64.apk` — signed, ready to sideload.
+`mindfiles-studio-v1.2.1-arm64.apk` — signed, ready to sideload.
 
 ## Install it
 
@@ -15,6 +15,15 @@ Verify the download if you want to:
 ```bash
 sha256sum -c SHA256SUMS
 ```
+
+## What changed in 1.2.1
+
+- **"Test ElevenLabs key"** in Settings runs a real request and reports the
+  server's own message plus a description of the stored key — its length and
+  format, never the key itself.
+- **Masked and truncated keys are now named.** ElevenLabs reveals a key once, at
+  creation; copying it from the dashboard afterwards yields a masked value that
+  pastes cleanly and is then rejected with no clue why.
 
 ## What changed in 1.2.0
 
@@ -59,7 +68,7 @@ package name.
 
 | | |
 | :--- | :--- |
-| Version | 1.2.0 (versionCode 1) |
+| Version | 1.2.1 (versionCode 1) |
 | Package | `com.mindfiles.studio` |
 | Architecture | `arm64-v8a` only — see below |
 | Min Android | 7.0 (API 24) |
