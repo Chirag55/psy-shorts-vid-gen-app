@@ -1,6 +1,6 @@
 # Installable build
 
-`mindfiles-studio-v1.1.0-arm64.apk` — signed, ready to sideload.
+`mindfiles-studio-v1.2.0-arm64.apk` — signed, ready to sideload.
 
 ## Install it
 
@@ -15,6 +15,19 @@ Verify the download if you want to:
 ```bash
 sha256sum -c SHA256SUMS
 ```
+
+## What changed in 1.2.0
+
+- **Voice credits are protected.** Synthesis is cached by a hash of text, voice
+  and model, so identical input never bills twice. Audio is written to disk the
+  instant it arrives, before anything that could fail. A batch authenticates once
+  up front, so a rejected key spends nothing.
+- **Fixed the Imagen 404.** Both image paths are supported now — Imagen via
+  `:predict` and the far more widely available Gemini image models via
+  `:generateContent` — and Settings lists what your key can actually call.
+- **Pasted keys are sanitised** of whitespace, non-breaking spaces, zero-width
+  characters and control codes, which are invisible in the input field and are a
+  common cause of a "rejected" key that is actually fine.
 
 ## What changed in 1.1.0
 
@@ -46,7 +59,7 @@ package name.
 
 | | |
 | :--- | :--- |
-| Version | 1.1.0 (versionCode 1) |
+| Version | 1.2.0 (versionCode 1) |
 | Package | `com.mindfiles.studio` |
 | Architecture | `arm64-v8a` only — see below |
 | Min Android | 7.0 (API 24) |
