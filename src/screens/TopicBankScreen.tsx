@@ -5,8 +5,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Badge, Body, Button, Card, Empty, Field, H2, Row, Screen, Segmented, Small } from '@/components/ui';
 import { colors, radius, space } from '@/theme';
 import { useStudio } from '@/store';
-import { getKey } from '@/services/keys';
-import { generateTopicIdeas } from '@/services/gemini';
+import { generateTopicIdeas } from '@/services/scriptProvider';
+import { fetchPerformanceContext } from '@/services/performance';
 import type { RootStackParamList } from '@/navigation/types';
 import type { Mode } from '@/core/types';
 
@@ -17,22 +17,21 @@ export default function TopicBankScreen() {
   const topics = useStudio((s) => s.topics);
   const addTopics = useStudio((s) => s.addTopics);
   const removeTopic = useStudio((s) => s.removeTopic);
-  const geminiModel = useStudio((s) => s.settings.geminiModel);
+  const settings = useStudio((s) => s.settings);
 
   const [category, setCategory] = useState('Social Dynamics');
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<Mode>('short');
 
   const refill = async () => {
-    const apiKey = await getKey('gemini');
-    if (!apiKey) {
-      Alert.alert('Gemini key missing', 'Add your API key in Settings.');
-      return;
-    }
     setBusy(true);
     try {
+      const model =
+        settings.scriptProvider === 'anthropic' ? settings.anthropicModel : settings.geminiModel;
+      const performanceContext = await fetchPerformanceContext(mode === 'short');
+
       const ideas = await generateTopicIdeas(
-        { apiKey, model: geminiModel },
+        { provider: settings.scriptProvider, model, performanceContext },
         category,
         8,
         topics.map((t) => t.topic)

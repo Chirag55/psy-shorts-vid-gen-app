@@ -208,14 +208,42 @@ export function shortsUrl(videoId: string): string {
 
 const API = 'https://www.googleapis.com/youtube/v3';
 
-async function api<T>(accessToken: string, path: string, params: Record<string, string>): Promise<T> {
-  const query = new URLSearchParams(params).toString();
+/**
+ * Two ways to read the channel:
+ *
+ *  - An **API key** — no sign-in, but only public data, and the channel has to
+ *    be identified explicitly because there is no "me".
+ *  - **OAuth** — sees unlisted and private uploads and knows which channel is
+ *    yours, but needs the consent flow.
+ *
+ * Both are supported because they suit different moments: an API key is two
+ * minutes of setup to start browsing, OAuth is required before publishing
+ * anyway.
+ */
+export type YouTubeAuth =
+  | { kind: 'oauth'; accessToken: string }
+  | { kind: 'apiKey'; apiKey: string; channelId: string };
+
+async function api<T>(auth: YouTubeAuth, path: string, params: Record<string, string>): Promise<T> {
+  const query = new URLSearchParams(
+    auth.kind === 'apiKey' ? { ...params, key: auth.apiKey } : params
+  ).toString();
+
   const res = await fetch(`${API}/${path}?${query}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: auth.kind === 'oauth' ? { Authorization: `Bearer ${auth.accessToken}` } : {},
   });
 
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
+
+    if (res.status === 403 && detail.includes('quotaExceeded')) {
+      throw new YouTubeError('YouTube API quota exhausted for today. It resets at midnight Pacific.');
+    }
+    if (res.status === 403 && auth.kind === 'apiKey') {
+      throw new YouTubeError(
+        'YouTube rejected the API key. Check that the YouTube Data API v3 is enabled for it, and that any key restrictions allow this app.'
+      );
+    }
     throw new YouTubeError(`YouTube ${res.status}: ${detail.slice(0, 300) || res.statusText}`);
   }
   return (await res.json()) as T;
@@ -238,7 +266,7 @@ export interface ChannelSummary {
  * and paging that is far cheaper in quota than search.list — 1 unit per page
  * against 100 per search.
  */
-export async function fetchMyChannel(accessToken: string): Promise<ChannelSummary> {
+export async function fetchChannel(auth: YouTubeAuth): Promise<ChannelSummary> {
   const data = await api<{
     items?: Array<{
       id: string;
@@ -246,13 +274,20 @@ export async function fetchMyChannel(accessToken: string): Promise<ChannelSummar
       contentDetails?: { relatedPlaylists?: { uploads?: string } };
       statistics?: { subscriberCount?: string; videoCount?: string; viewCount?: string };
     }>;
-  }>(accessToken, 'channels', {
+  }>(auth, 'channels', {
     part: 'snippet,contentDetails,statistics',
-    mine: 'true',
+    // An API key has no notion of "me", so the channel must be named outright.
+    ...(auth.kind === 'oauth' ? { mine: 'true' } : { id: auth.channelId }),
   });
 
   const channel = data.items?.[0];
-  if (!channel) throw new YouTubeError('This Google account has no YouTube channel.');
+  if (!channel) {
+    throw new YouTubeError(
+      auth.kind === 'oauth'
+        ? 'This Google account has no YouTube channel.'
+        : 'No channel found for that ID. It should look like UCxxxxxxxxxxxxxxxxxxxxxx.'
+    );
+  }
 
   const uploads = channel.contentDetails?.relatedPlaylists?.uploads;
   if (!uploads) throw new YouTubeError('Could not find the channel uploads playlist.');
@@ -281,7 +316,7 @@ export interface UploadsPage {
  * one per video, which matters against a 10,000 unit daily quota.
  */
 export async function fetchUploadsPage(
-  accessToken: string,
+  auth: YouTubeAuth,
   uploadsPlaylistId: string,
   pageToken?: string,
   pageSize = 25
@@ -289,7 +324,7 @@ export async function fetchUploadsPage(
   const playlist = await api<{
     nextPageToken?: string;
     items?: Array<{ contentDetails?: { videoId?: string } }>;
-  }>(accessToken, 'playlistItems', {
+  }>(auth, 'playlistItems', {
     part: 'contentDetails',
     playlistId: uploadsPlaylistId,
     maxResults: String(pageSize),
@@ -315,7 +350,8 @@ export async function fetchUploadsPage(
       statistics?: { viewCount?: string; likeCount?: string; commentCount?: string };
       status?: { privacyStatus?: string };
     }>;
-  }>(accessToken, 'videos', {
+  }>(auth, 'videos', {
+    // `status` is only meaningful with OAuth; an API key sees public videos only.
     part: 'snippet,contentDetails,statistics,status',
     id: ids.join(','),
   });
@@ -330,7 +366,7 @@ export async function fetchUploadsPage(
     viewCount: Number(item.statistics?.viewCount ?? 0),
     likeCount: Number(item.statistics?.likeCount ?? 0),
     commentCount: Number(item.statistics?.commentCount ?? 0),
-    privacyStatus: item.status?.privacyStatus ?? 'unknown',
+    privacyStatus: item.status?.privacyStatus ?? 'public',
   }));
 
   // videos.list does not guarantee the order ids were passed in, so restore the

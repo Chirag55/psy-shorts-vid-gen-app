@@ -5,7 +5,13 @@ import * as SecureStore from 'expo-secure-store';
  * AsyncStorage and never in the bundle. Keys entered on this device stay on it.
  */
 
-export type KeyName = 'gemini' | 'elevenlabs' | 'youtubeClientId' | 'youtubeTokens';
+export type KeyName =
+  | 'gemini'
+  | 'anthropic'
+  | 'elevenlabs'
+  | 'youtubeApiKey'
+  | 'youtubeClientId'
+  | 'youtubeTokens';
 
 const PREFIX = 'mindfiles.';
 

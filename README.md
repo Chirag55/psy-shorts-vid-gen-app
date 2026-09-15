@@ -17,7 +17,7 @@ the app's private storage on this device.
 | :--- | :--- |
 | **Studio Hub** | Live ElevenLabs quota, project list, entry points for a new short or deep dive |
 | **Topic Bank** | Gemini-suggested topics, deduped against what you already have |
-| **Generate** | Structured-output script generation with the word-count guardrails enforced |
+| **Generate** | Structured-output script generation — Gemini or Claude — with the word-count guardrails enforced |
 | **Storyboard** | Per-beat and per-chapter Veo prompts, one-tap copy to Flow, clip import, Imagen stills |
 | **Voice** | Voice picker, pre-flight quota guard, synthesis with word-level alignment, playback |
 | **Assembly** | On-device FFmpeg render with live log, per-chapter sync, burned captions, mascot overlay |
@@ -95,8 +95,10 @@ already configured to emit an installable APK.
 
 Open **Settings** in the app:
 
-- **Gemini API key** — scripts, topic ideas and Imagen stills
+- **Gemini and/or Anthropic API key** — either can write scripts and topics; Gemini
+  also generates the Imagen stills
 - **ElevenLabs API key** — narration and word alignment
+- **YouTube API key + channel ID** (optional) — browse published uploads with no sign-in
 - **Professor Hoot expressions** — import `base`, `surprised`, `thinking` and
   `knowing` from your desktop assets
 
@@ -131,7 +133,10 @@ src/
 │   ├── schemas.ts        Structured-output response schemas
 │   └── styleLock.ts      STYLE_LOCK enforcement and continuity phrasing
 ├── services/             Everything with side effects
-│   ├── gemini.ts         Script and topic generation
+│   ├── scriptProvider.ts One interface over both generation providers
+│   ├── gemini.ts         Gemini generation and live model discovery
+│   ├── anthropic.ts      Claude generation via structured outputs
+│   ├── performance.ts    Channel results → generation context
 │   ├── elevenlabs.ts     Synthesis with timestamps, quota
 │   ├── imagen.ts         Connective still generation
 │   ├── ffmpeg.ts         Typed FFmpegKit wrapper, probing, batched log capture
@@ -149,7 +154,7 @@ src/
 ported algorithms be tested directly:
 
 ```bash
-npm test          # 108 tests over the ported math, caption timeline and library parsing
+npm test          # 120 tests over the ported math, captions, library parsing and ranking
 npm run typecheck
 ```
 

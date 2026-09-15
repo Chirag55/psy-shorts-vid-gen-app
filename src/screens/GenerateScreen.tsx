@@ -5,8 +5,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Body, Button, Card, Field, H2, Row, Screen, Segmented, Small } from '@/components/ui';
 import { colors, space } from '@/theme';
 import { useStudio } from '@/store';
-import { getKey } from '@/services/keys';
-import { generateLongScript, generateShortScript } from '@/services/gemini';
+import { generateLongScript, generateShortScript } from '@/services/scriptProvider';
+import { fetchPerformanceContext } from '@/services/performance';
 import { validateScript } from '@/core/guardrails';
 import type { RootStackParamList } from '@/navigation/types';
 import { useMounted } from '@/util/useMounted';
@@ -29,7 +29,7 @@ export default function GenerateScreen() {
   const createProject = useStudio((s) => s.createProject);
   const markTopicUsed = useStudio((s) => s.markTopicUsed);
   const recentArchetypes = useStudio((s) => s.recentArchetypes);
-  const geminiModel = useStudio((s) => s.settings.geminiModel);
+  const settings = useStudio((s) => s.settings);
 
   const [mode, setMode] = useState(route.params.mode);
   const [topic, setTopic] = useState(route.params.topic ?? '');
@@ -49,21 +49,22 @@ export default function GenerateScreen() {
       return;
     }
 
-    const apiKey = await getKey('gemini');
-    if (!apiKey) {
-      Alert.alert('Gemini key missing', 'Add your Gemini API key in Settings before generating.');
-      return;
-    }
-
     busyRef.current = true;
     setBusy(true);
     try {
       const archetypes = recentArchetypes();
+      const model =
+        settings.scriptProvider === 'anthropic' ? settings.anthropicModel : settings.geminiModel;
+
+      // Never blocks generation: returns '' if YouTube is not connected or fails.
+      const performanceContext = await fetchPerformanceContext(mode === 'short');
+      const ctx = { provider: settings.scriptProvider, model, performanceContext };
+
       const script =
         mode === 'short'
-          ? await generateShortScript({ apiKey, model: geminiModel }, topic, category, archetypes)
+          ? await generateShortScript(ctx, topic, category, archetypes)
           : await generateLongScript(
-              { apiKey, model: geminiModel },
+              ctx,
               topic,
               category,
               Math.max(3, Math.min(6, Number.parseInt(chapters, 10) || 4)),

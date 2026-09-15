@@ -115,11 +115,44 @@ export async function synthesiseChapter(opts: SynthesiseOptions): Promise<Synthe
   };
 }
 
-export async function verifyElevenLabsKey(apiKey: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${API_BASE}/user`, { headers: { 'xi-api-key': apiKey } });
-    return res.ok;
-  } catch {
-    return false;
+export interface KeyCheck {
+  ok: boolean;
+  /** Why it failed, when it did — worth showing rather than a bare rejection. */
+  reason?: string;
+}
+
+/**
+ * Probes a key across several endpoints.
+ *
+ * ElevenLabs keys can be scoped: a key with only `text_to_speech` permission is
+ * perfectly able to narrate but gets 401 from `/v1/user`. Checking that one
+ * endpoint and calling the key invalid was wrong — it rejected working keys.
+ * Any endpoint answering proves the credential itself is good.
+ */
+export async function verifyElevenLabsKey(apiKey: string): Promise<KeyCheck> {
+  const probes = ['/voices', '/user/subscription', '/user', '/models'];
+  let lastStatus = 0;
+
+  for (const path of probes) {
+    try {
+      const res = await fetch(`${API_BASE}${path}`, { headers: { 'xi-api-key': apiKey } });
+      if (res.ok) return { ok: true };
+
+      lastStatus = res.status;
+      // 401/403 on one scoped endpoint says nothing about the key overall, so
+      // keep probing; only a hard auth failure everywhere is conclusive.
+      if (res.status !== 401 && res.status !== 403) break;
+    } catch {
+      return { ok: false, reason: 'No network connection to ElevenLabs.' };
+    }
   }
+
+  if (lastStatus === 401) return { ok: false, reason: 'ElevenLabs rejected the key (401).' };
+  if (lastStatus === 403) {
+    return {
+      ok: false,
+      reason: 'The key authenticated but has no permissions this app can read. It may still work for synthesis.',
+    };
+  }
+  return { ok: false, reason: `ElevenLabs returned ${lastStatus || 'no response'}.` };
 }

@@ -3,14 +3,16 @@ import { FlatList, Image, Linking, Pressable, RefreshControl, StyleSheet, Text, 
 import { Badge, Body, Button, Card, Empty, H2, Row, Segmented, Small } from '@/components/ui';
 import { colors, radius, space } from '@/theme';
 import { getKey, setKey } from '@/services/keys';
+import { useStudio } from '@/store';
 import {
   ensureFreshToken,
-  fetchMyChannel,
+  fetchChannel,
   fetchUploadsPage,
   shortsUrl,
   watchUrl,
   type ChannelSummary,
   type StoredTokens,
+  type YouTubeAuth,
 } from '@/services/youtube';
 import {
   formatCount,
@@ -41,30 +43,42 @@ export default function LibraryScreen() {
   const [error, setError] = useState<string | null>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
 
-  /** Returns a valid access token, refreshing and re-persisting it if needed. */
-  const accessToken = useCallback(async (): Promise<string | null> => {
+  /**
+   * Resolves however the channel is reachable.
+   *
+   * OAuth is preferred when present because it also sees unlisted and private
+   * uploads; an API key is the zero-sign-in fallback for public data.
+   */
+  const resolveAuth = useCallback(async (): Promise<YouTubeAuth | null> => {
     const raw = await getKey('youtubeTokens');
     const clientId = await getKey('youtubeClientId');
-    if (!raw || !clientId) return null;
 
-    const fresh = await ensureFreshToken(clientId, JSON.parse(raw) as StoredTokens);
-    await setKey('youtubeTokens', JSON.stringify(fresh));
-    return fresh.accessToken;
+    if (raw && clientId) {
+      const fresh = await ensureFreshToken(clientId, JSON.parse(raw) as StoredTokens);
+      await setKey('youtubeTokens', JSON.stringify(fresh));
+      return { kind: 'oauth', accessToken: fresh.accessToken };
+    }
+
+    const apiKey = await getKey('youtubeApiKey');
+    const channelId = useStudio.getState().settings.youtubeChannelId;
+    if (apiKey && channelId) return { kind: 'apiKey', apiKey, channelId };
+
+    return null;
   }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const token = await accessToken();
-      if (!token) {
+      const auth = await resolveAuth();
+      if (!auth) {
         if (mounted.current) setSignedIn(false);
         return;
       }
       if (mounted.current) setSignedIn(true);
 
-      const summary = await fetchMyChannel(token);
-      const page = await fetchUploadsPage(token, summary.uploadsPlaylistId);
+      const summary = await fetchChannel(auth);
+      const page = await fetchUploadsPage(auth, summary.uploadsPlaylistId);
 
       if (!mounted.current) return;
       setChannel(summary);
@@ -75,15 +89,15 @@ export default function LibraryScreen() {
     } finally {
       if (mounted.current) setLoading(false);
     }
-  }, [accessToken, mounted]);
+  }, [resolveAuth, mounted]);
 
   const loadMore = useCallback(async () => {
     if (!channel || !nextPageToken || loadingMore) return;
     setLoadingMore(true);
     try {
-      const token = await accessToken();
-      if (!token) return;
-      const page = await fetchUploadsPage(token, channel.uploadsPlaylistId, nextPageToken);
+      const auth = await resolveAuth();
+      if (!auth) return;
+      const page = await fetchUploadsPage(auth, channel.uploadsPlaylistId, nextPageToken);
       if (!mounted.current) return;
       // Guard against a duplicate page if the user scrolls fast.
       setVideos((prev) => {
@@ -96,7 +110,7 @@ export default function LibraryScreen() {
     } finally {
       if (mounted.current) setLoadingMore(false);
     }
-  }, [accessToken, channel, nextPageToken, loadingMore, mounted]);
+  }, [resolveAuth, channel, nextPageToken, loadingMore, mounted]);
 
   useEffect(() => {
     void load();
@@ -111,8 +125,9 @@ export default function LibraryScreen() {
           <Card>
             <H2>Not connected</H2>
             <Small>
-              Connect your channel on the Publish screen of any project, then come back here to see
-              everything you have uploaded.
+              Two ways to connect, both in Settings: add a YouTube API key and your channel ID to
+              browse public uploads with no sign-in, or sign in with Google to also see unlisted and
+              private videos and publish from the app.
             </Small>
           </Card>
         </View>

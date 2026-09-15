@@ -2,10 +2,23 @@ import { LONGFORM_RESPONSE_SCHEMA, SHORTFORM_RESPONSE_SCHEMA, TOPIC_IDEAS_SCHEMA
 import { longFormInstruction, shortFormInstruction, topicIdeasInstruction } from '@/core/prompts';
 import { withStyleLock } from '@/core/styleLock';
 import { moveForChapter } from '@/core/kenburns';
-import type { Chapter, LongScript, ShortBeat, ShortScript } from '@/core/types';
+import type { LongScript, ShortScript } from '@/core/types';
+import {
+  describeValidationError,
+  LongScriptSchema,
+  ShortScriptSchema,
+  TopicIdeasSchema,
+} from '@/core/scriptSchemas';
 
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
-const DEFAULT_MODEL = 'gemini-2.5-flash';
+
+/**
+ * Google retires model ids and returns 404 for them on existing keys, so a
+ * hardcoded id is a time bomb — `gemini-2.5-flash` was the default here until it
+ * stopped being available. Settings can list live models from the API and pick
+ * one; this is only the starting point.
+ */
+export const DEFAULT_GEMINI_MODEL = 'gemini-flash-latest';
 
 export class GeminiError extends Error {}
 
@@ -18,9 +31,10 @@ interface GenerateOptions {
 async function generateJson<T>(
   opts: GenerateOptions,
   instruction: string,
-  schema: unknown
+  schema: unknown,
+  validate: (value: unknown) => T
 ): Promise<T> {
-  const model = opts.model || DEFAULT_MODEL;
+  const model = opts.model || DEFAULT_GEMINI_MODEL;
 
   const res = await fetch(`${API_BASE}/models/${model}:generateContent`, {
     method: 'POST',
@@ -42,6 +56,17 @@ async function generateJson<T>(
 
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
+
+    // A retired model is the most common failure and the least obvious from a
+    // raw 404 body, so name the fix rather than echoing Google's JSON.
+    if (res.status === 404) {
+      throw new GeminiError(
+        `The model "${model}" is not available on this key. Open Settings and choose another — "Load available models" lists what your key can actually use.`
+      );
+    }
+    if (res.status === 400 && detail.includes('API key not valid')) {
+      throw new GeminiError('That Gemini API key was rejected.');
+    }
     throw new GeminiError(`Gemini ${res.status}: ${detail.slice(0, 400) || res.statusText}`);
   }
 
@@ -55,27 +80,58 @@ async function generateJson<T>(
     );
   }
 
+  let parsed: unknown;
   try {
-    return JSON.parse(text) as T;
+    parsed = JSON.parse(text);
   } catch {
     throw new GeminiError('Gemini returned malformed JSON despite the response schema.');
   }
+
+  // The response schema shapes generation but does not guarantee the payload,
+  // so validate before any of it reaches the storyboard.
+  return validate(parsed);
+}
+
+/** Lists the models this key can actually call, newest generations first. */
+export async function listGeminiModels(apiKey: string): Promise<Array<{ id: string; label: string }>> {
+  const res = await fetch(`${API_BASE}/models?pageSize=200`, {
+    headers: { 'x-goog-api-key': apiKey },
+  });
+  if (!res.ok) {
+    throw new GeminiError(`Could not list models (${res.status}). Check the API key.`);
+  }
+
+  const data = (await res.json()) as {
+    models?: Array<{ name?: string; displayName?: string; supportedGenerationMethods?: string[] }>;
+  };
+
+  return (data.models ?? [])
+    .filter((m) => m.supportedGenerationMethods?.includes('generateContent'))
+    .map((m) => ({
+      id: (m.name ?? '').replace(/^models\//, ''),
+      label: m.displayName ?? (m.name ?? '').replace(/^models\//, ''),
+    }))
+    .filter((m) => m.id && !m.id.includes('embedding') && !m.id.includes('aqa'))
+    .sort((a, b) => b.id.localeCompare(a.id, undefined, { numeric: true }));
 }
 
 export async function generateShortScript(
   opts: GenerateOptions,
   topic: string,
   category: string,
-  recentArchetypes: string[] = []
+  recentArchetypes: string[] = [],
+  performanceContext = ''
 ): Promise<ShortScript> {
-  const raw = await generateJson<{
-    title: string;
-    hookLine: string;
-    characterDescription: string;
-    archetype: string;
-    beats: ShortBeat[];
-    hashtags: string[];
-  }>(opts, shortFormInstruction(topic, category, recentArchetypes), SHORTFORM_RESPONSE_SCHEMA);
+  const raw = await generateJson(
+    opts,
+    shortFormInstruction(topic, category, recentArchetypes) + performanceContext,
+    SHORTFORM_RESPONSE_SCHEMA,
+    (value) => {
+      const result = ShortScriptSchema.safeParse(value);
+      if (!result.success) throw new GeminiError(describeValidationError(result.error));
+      return result.data;
+    }
+  );
 
   // The style lock is in the prompt, but enforce it here too — a clip generated
   // without it breaks visual continuity for the whole video and wastes credits.
@@ -95,17 +151,19 @@ export async function generateLongScript(
   topic: string,
   category: string,
   chapterCount = 4,
-  recentArchetypes: string[] = []
+  recentArchetypes: string[] = [],
+  performanceContext = ''
 ): Promise<LongScript> {
-  const raw = await generateJson<{
-    title: string;
-    coldOpen: string;
-    characterDescription: string;
-    archetype: string;
-    closingSynthesis: string;
-    chapters: Array<Omit<Chapter, 'index' | 'kenBurns'>>;
-    tags: string[];
-  }>(opts, longFormInstruction(topic, category, chapterCount, recentArchetypes), LONGFORM_RESPONSE_SCHEMA);
+  const raw = await generateJson(
+    opts,
+    longFormInstruction(topic, category, chapterCount, recentArchetypes) + performanceContext,
+    LONGFORM_RESPONSE_SCHEMA,
+    (value) => {
+      const result = LongScriptSchema.safeParse(value);
+      if (!result.success) throw new GeminiError(describeValidationError(result.error));
+      return result.data;
+    }
+  );
 
   return {
     mode: 'long',
@@ -136,14 +194,20 @@ export async function generateTopicIdeas(
   opts: GenerateOptions,
   category: string,
   count: number,
-  existing: string[]
+  existing: string[],
+  performanceContext = ''
 ): Promise<TopicIdea[]> {
-  const raw = await generateJson<{ topics: TopicIdea[] }>(
+  const raw = await generateJson(
     opts,
-    topicIdeasInstruction(category, count, existing),
-    TOPIC_IDEAS_SCHEMA
+    topicIdeasInstruction(category, count, existing) + performanceContext,
+    TOPIC_IDEAS_SCHEMA,
+    (value) => {
+      const result = TopicIdeasSchema.safeParse(value);
+      if (!result.success) throw new GeminiError(describeValidationError(result.error));
+      return result.data;
+    }
   );
-  return raw.topics ?? [];
+  return raw.topics;
 }
 
 /** Cheap reachability probe for the Settings screen's key status row. */

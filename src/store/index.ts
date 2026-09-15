@@ -5,6 +5,8 @@ import type { Emotion } from '@/core/mascot';
 import type { AssetState, Project, ScriptBody, TopicBankEntry, WordTiming } from '@/core/types';
 import { datedSlug } from '@/core/slug';
 import { DEFAULT_VOICE_ID } from '@/services/elevenlabs';
+import { DEFAULT_GEMINI_MODEL } from '@/services/gemini';
+import { DEFAULT_ANTHROPIC_MODEL } from '@/services/anthropic';
 import { deleteProjectFiles } from '@/services/workspace';
 
 const emptyAssets = (): AssetState => ({
@@ -17,7 +19,14 @@ const emptyAssets = (): AssetState => ({
 
 export interface Settings {
   voiceId: string;
+  /** Which service writes the scripts. */
+  scriptProvider: 'gemini' | 'anthropic';
   geminiModel: string;
+  anthropicModel: string;
+  /** Needed to read a channel with an API key, which has no notion of "me". */
+  youtubeChannelId: string;
+  /** Feed recent channel performance into generation prompts. */
+  usePerformanceContext: boolean;
   includeMascot: boolean;
   includeCaptions: boolean;
   draftRender: boolean;
@@ -64,7 +73,11 @@ export const useStudio = create<StudioState>()(
       hydrated: false,
       settings: {
         voiceId: DEFAULT_VOICE_ID,
-        geminiModel: 'gemini-2.5-flash',
+        scriptProvider: 'gemini',
+        geminiModel: DEFAULT_GEMINI_MODEL,
+        anthropicModel: DEFAULT_ANTHROPIC_MODEL,
+        youtubeChannelId: '',
+        usePerformanceContext: true,
         includeMascot: true,
         includeCaptions: true,
         draftRender: true,
