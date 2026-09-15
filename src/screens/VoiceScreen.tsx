@@ -6,7 +6,7 @@ import { Badge, Body, Button, Card, Divider, Empty, H2, H3, ProgressBar, Row, Sc
 import { colors, radius, space } from '@/theme';
 import { useStudio } from '@/store';
 import { getKey } from '@/services/keys';
-import { fetchSubscription, synthesiseChapter, VOICES } from '@/services/elevenlabs';
+import { fetchSubscription, preflight, synthesiseChapter, VOICES } from '@/services/elevenlabs';
 import { checkVoiceQuota } from '@/core/guardrails';
 import type { LongScript, ShortScript } from '@/core/types';
 import type { RootStackParamList } from '@/navigation/types';
@@ -115,6 +115,18 @@ export default function VoiceScreen() {
       });
       setAudio(project.id, track.key, result.audioUri, result.words);
 
+      if (result.fromCache) {
+        // Nothing was billed, so there is no quota to re-read.
+        return;
+      }
+
+      if (!result.words.length) {
+        Alert.alert(
+          'Voiced, but no word timings',
+          'The audio was saved and is safe. ElevenLabs returned no alignment, so captions for this track will be skipped unless you re-synthesise.'
+        );
+      }
+
       // Refresh from the server rather than trusting the local counter, so spend
       // from the desktop studio is reflected too.
       try {
@@ -147,6 +159,21 @@ export default function VoiceScreen() {
       Alert.alert('Quota guard', check.reason ?? 'Not enough characters remaining.');
       return;
     }
+
+    // Authenticate once before the batch. Without this a rejected key fails on
+    // every track in turn, and any that did succeed would have been billed.
+    const apiKey = await getKey('elevenlabs');
+    if (!apiKey) {
+      Alert.alert('ElevenLabs key missing', 'Add your API key in Settings.');
+      return;
+    }
+    try {
+      await preflight(apiKey);
+    } catch (e) {
+      Alert.alert('Nothing synthesised', e instanceof Error ? e.message : String(e));
+      return;
+    }
+
     for (const track of pending) {
       if (!mounted.current) return;
       await synthesise(track, false);
@@ -180,6 +207,10 @@ export default function VoiceScreen() {
         <ProgressBar fraction={settings.voiceCharsUsed / (settings.voiceCharLimit || 1)} />
         <Small>
           {pendingChars.toLocaleString()} characters pending · safety ceiling {quota.ceiling.toLocaleString()}
+        </Small>
+        <Small style={{ color: colors.textFaint }}>
+          Identical text in the same voice is served from the on-device cache and is never billed
+          twice. Audio is written to disk the moment it arrives, before anything that could fail.
         </Small>
       </Card>
 

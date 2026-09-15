@@ -7,6 +7,7 @@ import { datedSlug } from '@/core/slug';
 import { DEFAULT_VOICE_ID } from '@/services/elevenlabs';
 import { DEFAULT_GEMINI_MODEL } from '@/services/gemini';
 import { DEFAULT_ANTHROPIC_MODEL } from '@/services/anthropic';
+import { DEFAULT_IMAGE_MODEL } from '@/services/imagen';
 import { deleteProjectFiles } from '@/services/workspace';
 
 const emptyAssets = (): AssetState => ({
@@ -23,6 +24,8 @@ export interface Settings {
   scriptProvider: 'gemini' | 'anthropic';
   geminiModel: string;
   anthropicModel: string;
+  /** Model used for connective stills — Imagen or a Gemini image model. */
+  imageModel: string;
   /** Needed to read a channel with an API key, which has no notion of "me". */
   youtubeChannelId: string;
   /** Feed recent channel performance into generation prompts. */
@@ -76,6 +79,7 @@ export const useStudio = create<StudioState>()(
         scriptProvider: 'gemini',
         geminiModel: DEFAULT_GEMINI_MODEL,
         anthropicModel: DEFAULT_ANTHROPIC_MODEL,
+        imageModel: DEFAULT_IMAGE_MODEL,
         youtubeChannelId: '',
         usePerformanceContext: true,
         includeMascot: true,

@@ -1,6 +1,7 @@
 import { alignmentToWords, type ElevenLabsAlignment } from '@/core/alignment';
 import type { WordTiming } from '@/core/types';
-import { bucketFile, writeBase64, writeText } from './workspace';
+import { bucketFile, writeText } from './workspace';
+import * as audioCache from './audioCache';
 
 const API_BASE = 'https://api.elevenlabs.io/v1';
 
@@ -48,7 +49,33 @@ export interface SynthesisResult {
   alignmentUri: string;
   words: WordTiming[];
   duration: number;
+  /** Zero when served from cache — nothing was billed. */
   charactersUsed: number;
+  fromCache: boolean;
+}
+
+/**
+ * Confirms the key can authenticate before a batch spends anything.
+ *
+ * Runs against a free endpoint. Its whole purpose is to fail *before* the first
+ * paid call rather than after several have already been billed.
+ */
+export async function preflight(apiKey: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/user/subscription`, { headers: { 'xi-api-key': apiKey } });
+  } catch {
+    throw new ElevenLabsError('No connection to ElevenLabs. Nothing was synthesised.');
+  }
+
+  if (res.status === 401) {
+    throw new ElevenLabsError(
+      'ElevenLabs rejected the API key (401), so nothing was synthesised and no characters were spent. Re-copy the key from elevenlabs.io — Profile, then API Keys — and paste it in Settings.'
+    );
+  }
+  if (!res.ok && res.status !== 403) {
+    throw new ElevenLabsError(`ElevenLabs is unavailable (${res.status}). Nothing was synthesised.`);
+  }
 }
 
 interface SynthesiseOptions {
@@ -69,13 +96,38 @@ interface SynthesiseOptions {
  * — a separate forced-alignment pass would double the character spend.
  */
 export async function synthesiseChapter(opts: SynthesiseOptions): Promise<SynthesisResult> {
+  const modelId = opts.modelId ?? 'eleven_multilingual_v2';
+  const key = await audioCache.cacheKey({ text: opts.text, voiceId: opts.voiceId, modelId });
+
+  // Identical text in the same voice was already paid for once. Serve it from
+  // disk rather than billing again.
+  const cached = audioCache.lookup(key);
+  if (cached) {
+    const audioUri = await audioCache.materialise(key, bucketFile('audio', opts.slug, `ch_${opts.key}.mp3`));
+    const alignmentFile = writeText(
+      bucketFile('audio', opts.slug, `ch_${opts.key}.words.json`),
+      JSON.stringify(cached.words, null, 2)
+    );
+    return {
+      audioUri,
+      alignmentUri: alignmentFile.uri,
+      words: cached.words,
+      duration: cached.words.length ? cached.words[cached.words.length - 1].end : 0,
+      charactersUsed: 0,
+      fromCache: true,
+    };
+  }
+
+  // Fail on a bad key before any characters are spent.
+  await preflight(opts.apiKey);
+
   const res = await fetch(`${API_BASE}/text-to-speech/${opts.voiceId}/with-timestamps`, {
     method: 'POST',
     headers: { 'xi-api-key': opts.apiKey, 'Content-Type': 'application/json' },
     signal: opts.signal,
     body: JSON.stringify({
       text: opts.text,
-      model_id: opts.modelId ?? 'eleven_multilingual_v2',
+      model_id: modelId,
       voice_settings: {
         stability: 0.5,
         similarity_boost: 0.75,
@@ -92,26 +144,39 @@ export async function synthesiseChapter(opts: SynthesiseOptions): Promise<Synthe
 
   const payload = await res.json();
   const audioBase64: string | undefined = payload?.audio_base64;
+
+  // Characters are spent the moment the request succeeds. Persist the audio
+  // before touching anything else — alignment parsing, JSON shape, disk layout
+  // are all things that can throw, and losing paid audio to any of them means
+  // paying for it twice.
+  if (!audioBase64) {
+    throw new ElevenLabsError(
+      'ElevenLabs charged for this request but returned no audio. Nothing was saved — contact them with the request id if this repeats.'
+    );
+  }
+  audioCache.storeAudio(key, audioBase64);
+
   const alignment: ElevenLabsAlignment | undefined =
     payload?.normalized_alignment ?? payload?.alignment;
 
-  if (!audioBase64 || !alignment) {
-    throw new ElevenLabsError('Response was missing audio or alignment data.');
-  }
+  // Alignment can be recovered; the audio cannot. If it is missing, keep the
+  // paid audio and degrade to no word timings rather than discarding both.
+  const words = alignment ? alignmentToWords(alignment) : [];
+  audioCache.storeWords(key, words);
 
-  const words = alignmentToWords(alignment);
-  const audioFile = writeBase64(bucketFile('audio', opts.slug, `ch_${opts.key}.mp3`), audioBase64);
+  const audioUri = await audioCache.materialise(key, bucketFile('audio', opts.slug, `ch_${opts.key}.mp3`));
   const alignmentFile = writeText(
     bucketFile('audio', opts.slug, `ch_${opts.key}.words.json`),
     JSON.stringify(words, null, 2)
   );
 
   return {
-    audioUri: audioFile.uri,
+    audioUri,
     alignmentUri: alignmentFile.uri,
     words,
     duration: words.length ? words[words.length - 1].end : 0,
     charactersUsed: opts.text.length,
+    fromCache: false,
   };
 }
 
@@ -147,7 +212,13 @@ export async function verifyElevenLabsKey(apiKey: string): Promise<KeyCheck> {
     }
   }
 
-  if (lastStatus === 401) return { ok: false, reason: 'ElevenLabs rejected the key (401).' };
+  if (lastStatus === 401) {
+    return {
+      ok: false,
+      reason:
+        'ElevenLabs rejected the key (401 Invalid API key). The key itself is wrong, revoked, or from a different account — re-copy it from elevenlabs.io under Profile → API Keys.',
+    };
+  }
   if (lastStatus === 403) {
     return {
       ok: false,

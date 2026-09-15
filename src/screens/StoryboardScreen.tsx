@@ -59,6 +59,7 @@ export default function StoryboardScreen() {
         prompt,
         slug: project.slug,
         key,
+        model: useStudio.getState().settings.imageModel,
         aspectRatio: project.mode === 'short' ? '9:16' : '16:9',
       });
       setStill(project.id, key, uri);

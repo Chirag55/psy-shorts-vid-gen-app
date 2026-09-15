@@ -1,5 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 
+export { describeSanitisation, sanitiseKey } from '@/core/keyHygiene';
+
 /**
  * API credentials live in the Android keystore via SecureStore, never in
  * AsyncStorage and never in the bundle. Keys entered on this device stay on it.

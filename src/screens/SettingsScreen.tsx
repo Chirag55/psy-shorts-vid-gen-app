@@ -4,11 +4,13 @@ import * as ImagePicker from 'expo-image-picker';
 import { Badge, Body, Button, Card, Divider, Field, H2, H3, Row, Screen, Segmented, Small } from '@/components/ui';
 import { colors, radius, space } from '@/theme';
 import { useStudio } from '@/store';
-import { clearKey, getKey, maskKey, setKey } from '@/services/keys';
+import { clearKey, describeSanitisation, getKey, maskKey, sanitiseKey, setKey } from '@/services/keys';
 import { verifyGeminiKey } from '@/services/gemini';
 import { verifyAnthropicKey } from '@/services/anthropic';
 import { verifyElevenLabsKey } from '@/services/elevenlabs';
 import { listModels, PROVIDERS, type ProviderId } from '@/services/scriptProvider';
+import { listImageModels } from '@/services/imagen';
+import * as audioCache from '@/services/audioCache';
 import { formatBytes, importInto, workspaceSize } from '@/services/workspace';
 import type { Emotion } from '@/core/mascot';
 import { useMounted } from '@/util/useMounted';
@@ -39,6 +41,9 @@ export default function SettingsScreen() {
   const [storage, setStorage] = useState(0);
   const [models, setModels] = useState<Array<{ id: string; label: string }>>([]);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [imageModels, setImageModels] = useState<Array<{ id: string; label: string }>>([]);
+  const [loadingImageModels, setLoadingImageModels] = useState(false);
+  const [cache, setCache] = useState<audioCache.CacheStats>({ entries: 0, bytes: 0, charactersSaved: 0 });
 
   const refreshStored = async () => {
     const [gemini, anthropic, eleven, youtubeApiKey] = await Promise.all([
@@ -57,6 +62,7 @@ export default function SettingsScreen() {
       if (!mounted.current) return;
       try {
         setStorage(workspaceSize());
+        setCache(audioCache.stats());
       } catch {
         setStorage(0);
       }
@@ -78,28 +84,45 @@ export default function SettingsScreen() {
     const warnings: string[] = [];
 
     try {
-      if (draft.gemini.trim()) {
-        await setKey('gemini', draft.gemini.trim());
-        if (!(await verifyGeminiKey(draft.gemini.trim()))) {
+      const clean = {
+        gemini: sanitiseKey(draft.gemini),
+        anthropic: sanitiseKey(draft.anthropic),
+        eleven: sanitiseKey(draft.eleven),
+        youtubeApiKey: sanitiseKey(draft.youtubeApiKey),
+      };
+
+      for (const [label, raw, cleaned] of [
+        ['Gemini', draft.gemini, clean.gemini],
+        ['Anthropic', draft.anthropic, clean.anthropic],
+        ['ElevenLabs', draft.eleven, clean.eleven],
+        ['YouTube', draft.youtubeApiKey, clean.youtubeApiKey],
+      ] as const) {
+        const note = raw.trim() ? describeSanitisation(raw, cleaned) : null;
+        if (note) warnings.push(`${label}: ${note}`);
+      }
+
+      if (clean.gemini) {
+        await setKey('gemini', clean.gemini);
+        if (!(await verifyGeminiKey(clean.gemini))) {
           warnings.push('Gemini did not accept that key — saved anyway, but generation will fail until it is right.');
         }
       }
 
-      if (draft.anthropic.trim()) {
-        await setKey('anthropic', draft.anthropic.trim());
-        if (!(await verifyAnthropicKey(draft.anthropic.trim()))) {
+      if (clean.anthropic) {
+        await setKey('anthropic', clean.anthropic);
+        if (!(await verifyAnthropicKey(clean.anthropic))) {
           warnings.push('Anthropic did not accept that key — saved anyway.');
         }
       }
 
-      if (draft.eleven.trim()) {
-        await setKey('elevenlabs', draft.eleven.trim());
-        const check = await verifyElevenLabsKey(draft.eleven.trim());
-        if (!check.ok) warnings.push(`ElevenLabs: ${check.reason ?? 'could not verify'} Saved anyway.`);
+      if (clean.eleven) {
+        await setKey('elevenlabs', clean.eleven);
+        const check = await verifyElevenLabsKey(clean.eleven);
+        if (!check.ok) warnings.push(`ElevenLabs: ${check.reason ?? 'could not verify'}`);
       }
 
-      if (draft.youtubeApiKey.trim()) {
-        await setKey('youtubeApiKey', draft.youtubeApiKey.trim());
+      if (clean.youtubeApiKey) {
+        await setKey('youtubeApiKey', clean.youtubeApiKey);
       }
 
       setDraft({ gemini: '', anthropic: '', eleven: '', youtubeApiKey: '' });
@@ -125,6 +148,26 @@ export default function SettingsScreen() {
       Alert.alert('Could not load models', e instanceof Error ? e.message : String(e));
     } finally {
       if (mounted.current) setLoadingModels(false);
+    }
+  };
+
+  const loadImageModels = async () => {
+    const apiKey = await getKey('gemini');
+    if (!apiKey) {
+      Alert.alert('Gemini key needed', 'Image models are listed with the Gemini key.');
+      return;
+    }
+    setLoadingImageModels(true);
+    try {
+      const list = await listImageModels(apiKey);
+      if (mounted.current) setImageModels(list);
+      if (!list.length) {
+        Alert.alert('No image models', 'This key cannot call any image model. Stills will have to be imported by hand.');
+      }
+    } catch (e) {
+      Alert.alert('Could not load image models', e instanceof Error ? e.message : String(e));
+    } finally {
+      if (mounted.current) setLoadingImageModels(false);
     }
   };
 
@@ -214,6 +257,83 @@ export default function SettingsScreen() {
             and pick a current one.
           </Small>
         )}
+      </Card>
+
+      <Card>
+        <H3>Image model</H3>
+        <Small>
+          Used for the connective stills. Imagen is not enabled on every Gemini key — if stills
+          return a 404, load the list and pick one that is.
+        </Small>
+        <Field
+          label="Image model"
+          value={settings.imageModel}
+          onChangeText={(v) => updateSettings({ imageModel: v })}
+          autoCapitalize="none"
+        />
+        <Button
+          label={loadingImageModels ? 'Loading…' : 'Load image models'}
+          variant="secondary"
+          loading={loadingImageModels}
+          onPress={loadImageModels}
+        />
+        {imageModels.length ? (
+          <View style={{ gap: space.xs, marginTop: space.sm }}>
+            {imageModels.map((m) => (
+              <Pressable
+                key={m.id}
+                onPress={() => updateSettings({ imageModel: m.id })}
+                style={[s.modelRow, m.id === settings.imageModel && s.modelRowActive]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.modelId, m.id === settings.imageModel && { color: colors.accent }]}>{m.id}</Text>
+                </View>
+                {m.id === settings.imageModel ? <Badge label="IN USE" tone="ok" /> : null}
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+      </Card>
+
+      <Card>
+        <H3>Voice credit protection</H3>
+        <Small>
+          Every synthesis is cached by the exact text and voice, so re-rendering or retrying never
+          bills the same words twice. The cache survives deleting a project.
+        </Small>
+        <Row style={{ justifyContent: 'space-between', marginTop: space.xs }}>
+          <Small>Cached takes</Small>
+          <Small style={{ color: colors.text }}>{cache.entries}</Small>
+        </Row>
+        <Row style={{ justifyContent: 'space-between' }}>
+          <Small>Characters not re-billed</Small>
+          <Small style={{ color: colors.ok }}>~{cache.charactersSaved.toLocaleString()}</Small>
+        </Row>
+        <Row style={{ justifyContent: 'space-between' }}>
+          <Small>Cache size</Small>
+          <Small style={{ color: colors.text }}>{formatBytes(cache.bytes)}</Small>
+        </Row>
+        <Button
+          label="Clear audio cache"
+          variant="ghost"
+          onPress={() =>
+            Alert.alert(
+              'Clear audio cache',
+              'Re-synthesising anything cleared will spend characters again. Continue?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Clear',
+                  style: 'destructive',
+                  onPress: () => {
+                    audioCache.clear();
+                    setCache({ entries: 0, bytes: 0, charactersSaved: 0 });
+                  },
+                },
+              ]
+            )
+          }
+        />
       </Card>
 
       <Card>
