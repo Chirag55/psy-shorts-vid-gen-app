@@ -2,6 +2,7 @@ import { alignmentToWords, type ElevenLabsAlignment } from '@/core/alignment';
 import type { WordTiming } from '@/core/types';
 import { bucketFile, writeText } from './workspace';
 import * as audioCache from './audioCache';
+import { describeElevenLabsKey } from '@/core/keyHygiene';
 
 const API_BASE = 'https://api.elevenlabs.io/v1';
 
@@ -178,6 +179,50 @@ export async function synthesiseChapter(opts: SynthesiseOptions): Promise<Synthe
     charactersUsed: opts.text.length,
     fromCache: false,
   };
+}
+
+export interface KeyDiagnostic {
+  /** HTTP status from the live probe, or 0 if the request never completed. */
+  status: number;
+  /** Exact message the server returned, so there is nothing to second-guess. */
+  serverMessage: string;
+  /** Shape analysis of the stored key, revealing nothing secret. */
+  shape: string;
+  ok: boolean;
+}
+
+/**
+ * Runs a real request and reports exactly what came back.
+ *
+ * Built for the "it works on my other machine" case: a key is account-scoped,
+ * never device-scoped, so the same string cannot succeed in one place and fail
+ * in another. Showing the server's own words plus the key's shape makes it
+ * obvious when the two strings differ.
+ */
+export async function diagnoseKey(apiKey: string): Promise<KeyDiagnostic> {
+  const shape = describeElevenLabsKey(apiKey).summary;
+
+  try {
+    const res = await fetch(`${API_BASE}/user/subscription`, { headers: { 'xi-api-key': apiKey } });
+    const body = await res.text().catch(() => '');
+
+    let serverMessage = body.slice(0, 200);
+    try {
+      const parsed = JSON.parse(body);
+      serverMessage = parsed?.detail?.message ?? parsed?.detail?.status ?? serverMessage;
+    } catch {
+      // Not JSON — the raw body is still the most useful thing to show.
+    }
+
+    return { status: res.status, serverMessage: serverMessage || res.statusText, shape, ok: res.ok };
+  } catch (e) {
+    return {
+      status: 0,
+      serverMessage: e instanceof Error ? e.message : 'Request failed before reaching ElevenLabs.',
+      shape,
+      ok: false,
+    };
+  }
 }
 
 export interface KeyCheck {

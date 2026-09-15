@@ -5,9 +5,10 @@ import { Badge, Body, Button, Card, Divider, Field, H2, H3, Row, Screen, Segment
 import { colors, radius, space } from '@/theme';
 import { useStudio } from '@/store';
 import { clearKey, describeSanitisation, getKey, maskKey, sanitiseKey, setKey } from '@/services/keys';
+import { describeElevenLabsKey } from '@/core/keyHygiene';
 import { verifyGeminiKey } from '@/services/gemini';
 import { verifyAnthropicKey } from '@/services/anthropic';
-import { verifyElevenLabsKey } from '@/services/elevenlabs';
+import { diagnoseKey, verifyElevenLabsKey } from '@/services/elevenlabs';
 import { listModels, PROVIDERS, type ProviderId } from '@/services/scriptProvider';
 import { listImageModels } from '@/services/imagen';
 import * as audioCache from '@/services/audioCache';
@@ -117,6 +118,12 @@ export default function SettingsScreen() {
 
       if (clean.eleven) {
         await setKey('elevenlabs', clean.eleven);
+
+        // Shape is checked before the network call: a masked or truncated paste
+        // explains a rejection far better than a bare 401 does.
+        const shape = describeElevenLabsKey(clean.eleven);
+        if (!shape.looksValid) warnings.push(`ElevenLabs key shape: ${shape.summary}`);
+
         const check = await verifyElevenLabsKey(clean.eleven);
         if (!check.ok) warnings.push(`ElevenLabs: ${check.reason ?? 'could not verify'}`);
       }
@@ -149,6 +156,29 @@ export default function SettingsScreen() {
     } finally {
       if (mounted.current) setLoadingModels(false);
     }
+  };
+
+  /** Live probe plus shape analysis, for when a key "works elsewhere". */
+  const testElevenLabs = async () => {
+    const key = await getKey('elevenlabs');
+    if (!key) {
+      Alert.alert('No key saved', 'Save an ElevenLabs key first.');
+      return;
+    }
+
+    const d = await diagnoseKey(key);
+    Alert.alert(
+      d.ok ? 'Key works' : `Key rejected (HTTP ${d.status})`,
+      [
+        `Server said: ${d.serverMessage}`,
+        '',
+        `Key shape: ${d.shape}`,
+        '',
+        d.ok
+          ? 'Synthesis will work.'
+          : 'An ElevenLabs key is tied to the account, not the device — the same string cannot work on one machine and fail on another. If it works elsewhere, the two are different strings.',
+      ].join('\n')
+    );
   };
 
   const loadImageModels = async () => {
@@ -366,6 +396,7 @@ export default function SettingsScreen() {
         />
 
         <Button label={saving ? 'Saving…' : 'Save keys'} loading={saving} onPress={saveKeys} />
+        <Button label="Test ElevenLabs key" variant="secondary" onPress={testElevenLabs} />
         <Small style={{ color: colors.textFaint }}>
           Keys are always saved. Verification runs afterwards and only warns, so a scoped key that
           works for one service is never thrown away.
