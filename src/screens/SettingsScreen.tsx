@@ -9,6 +9,7 @@ import { describeElevenLabsKey } from '@/core/keyHygiene';
 import { verifyGeminiKey } from '@/services/gemini';
 import { verifyAnthropicKey } from '@/services/anthropic';
 import { diagnoseKey, verifyElevenLabsKey } from '@/services/elevenlabs';
+import { authorize, redirectUri } from '@/services/youtube';
 import { listModels, PROVIDERS, type ProviderId } from '@/services/scriptProvider';
 import { listImageModels } from '@/services/imagen';
 import * as audioCache from '@/services/audioCache';
@@ -24,7 +25,10 @@ const EMOTIONS: Array<{ key: Emotion; label: string; hint: string }> = [
   { key: 'knowing', label: 'Knowing', hint: 'Reframe / outro' },
 ];
 
-type StoredKeys = Record<'gemini' | 'anthropic' | 'eleven' | 'youtubeApiKey', string | null>;
+type StoredKeys = Record<
+  'gemini' | 'anthropic' | 'eleven' | 'youtubeApiKey' | 'youtubeClientId',
+  string | null
+>;
 
 export default function SettingsScreen() {
   const settings = useStudio((s) => s.settings);
@@ -32,13 +36,22 @@ export default function SettingsScreen() {
   const projects = useStudio((s) => s.projects);
   const mounted = useMounted();
 
-  const [draft, setDraft] = useState({ gemini: '', anthropic: '', eleven: '', youtubeApiKey: '' });
+  const [draft, setDraft] = useState({
+    gemini: '',
+    anthropic: '',
+    eleven: '',
+    youtubeApiKey: '',
+    youtubeClientId: '',
+  });
   const [stored, setStored] = useState<StoredKeys>({
     gemini: null,
     anthropic: null,
     eleven: null,
     youtubeApiKey: null,
+    youtubeClientId: null,
   });
+  const [youtubeSignedIn, setYoutubeSignedIn] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
   const [saving, setSaving] = useState(false);
   const [storage, setStorage] = useState(0);
   const [models, setModels] = useState<Array<{ id: string; label: string }>>([]);
@@ -48,13 +61,17 @@ export default function SettingsScreen() {
   const [cache, setCache] = useState<audioCache.CacheStats>({ entries: 0, bytes: 0, charactersSaved: 0 });
 
   const refreshStored = async () => {
-    const [gemini, anthropic, eleven, youtubeApiKey] = await Promise.all([
+    const [gemini, anthropic, eleven, youtubeApiKey, youtubeClientId, tokens] = await Promise.all([
       getKey('gemini'),
       getKey('anthropic'),
       getKey('elevenlabs'),
       getKey('youtubeApiKey'),
+      getKey('youtubeClientId'),
+      getKey('youtubeTokens'),
     ]);
-    if (mounted.current) setStored({ gemini, anthropic, eleven, youtubeApiKey });
+    if (!mounted.current) return;
+    setStored({ gemini, anthropic, eleven, youtubeApiKey, youtubeClientId });
+    setYoutubeSignedIn(Boolean(tokens));
   };
 
   useEffect(() => {
@@ -91,6 +108,7 @@ export default function SettingsScreen() {
         anthropic: sanitiseKey(draft.anthropic),
         eleven: sanitiseKey(draft.eleven),
         youtubeApiKey: sanitiseKey(draft.youtubeApiKey),
+        youtubeClientId: sanitiseKey(draft.youtubeClientId),
       };
 
       for (const [label, raw, cleaned] of [
@@ -98,6 +116,7 @@ export default function SettingsScreen() {
         ['Anthropic', draft.anthropic, clean.anthropic],
         ['ElevenLabs', draft.eleven, clean.eleven],
         ['YouTube', draft.youtubeApiKey, clean.youtubeApiKey],
+        ['YouTube client ID', draft.youtubeClientId, clean.youtubeClientId],
       ] as const) {
         const note = raw.trim() ? describeSanitisation(raw, cleaned) : null;
         if (note) warnings.push(`${label}: ${note}`);
@@ -133,7 +152,11 @@ export default function SettingsScreen() {
         await setKey('youtubeApiKey', clean.youtubeApiKey);
       }
 
-      setDraft({ gemini: '', anthropic: '', eleven: '', youtubeApiKey: '' });
+      if (clean.youtubeClientId) {
+        await setKey('youtubeClientId', clean.youtubeClientId);
+      }
+
+      setDraft({ gemini: '', anthropic: '', eleven: '', youtubeApiKey: '', youtubeClientId: '' });
       await refreshStored();
 
       Alert.alert(
@@ -179,6 +202,49 @@ export default function SettingsScreen() {
           ? 'Synthesis will work.'
           : 'An ElevenLabs key is tied to the account, not the device — the same string cannot work on one machine and fail on another. If it works elsewhere, the two are different strings.',
       ].join('\n')
+    );
+  };
+
+  /** Runs the Google consent flow using the stored client ID. */
+  const signInToYouTube = async () => {
+    const clientId = await getKey('youtubeClientId');
+    if (!clientId) {
+      Alert.alert('Client ID needed', 'Paste your Android OAuth client ID above and save it first.');
+      return;
+    }
+
+    setSigningIn(true);
+    try {
+      const tokens = await authorize(clientId);
+      await setKey('youtubeTokens', JSON.stringify(tokens));
+      if (mounted.current) setYoutubeSignedIn(true);
+      Alert.alert('Signed in', 'This device can now publish to your channel and see private uploads.');
+    } catch (e) {
+      Alert.alert('Sign-in failed', e instanceof Error ? e.message : String(e));
+    } finally {
+      if (mounted.current) setSigningIn(false);
+    }
+  };
+
+  const showOAuthSetup = async () => {
+    const clientId = (await getKey('youtubeClientId')) ?? '';
+    Alert.alert(
+      'Registering the OAuth client',
+      [
+        'In Google Cloud Console, create an OAuth client of type Android with:',
+        '',
+        'Package name:',
+        'com.mindfiles.studio',
+        '',
+        'SHA-1 certificate fingerprint:',
+        '5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25',
+        '',
+        'Enable YouTube Data API v3, add the youtube and youtube.upload scopes to the consent screen, and add your own Google account as a test user while the app is unverified.',
+        '',
+        clientId ? `Redirect URI in use:\n${redirectUri(clientId)}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n')
     );
   };
 
@@ -437,6 +503,32 @@ export default function SettingsScreen() {
           Find it at youtube.com/account_advanced. An API key cannot ask "which channel is mine", so
           it has to be named.
         </Small>
+
+        <Divider />
+
+        <Row style={{ justifyContent: 'space-between' }}>
+          <H3>Sign in to publish</H3>
+          <Badge label={youtubeSignedIn ? 'SIGNED IN' : 'SIGNED OUT'} tone={youtubeSignedIn ? 'ok' : 'neutral'} />
+        </Row>
+        <Small>
+          Publishing, and seeing unlisted or private uploads, needs Google sign-in rather than an API
+          key. Android OAuth clients issue no secret, so nothing sensitive is stored in the app.
+        </Small>
+        <KeyRow label="OAuth client ID" value={stored.youtubeClientId} />
+        <Field
+          label="Android OAuth client ID"
+          value={draft.youtubeClientId}
+          onChangeText={(v) => setDraft((d) => ({ ...d, youtubeClientId: v }))}
+          placeholder="xxxxx.apps.googleusercontent.com"
+          autoCapitalize="none"
+        />
+        <Button label="Show setup details" variant="ghost" onPress={showOAuthSetup} />
+        <Button
+          label={youtubeSignedIn ? 'Sign in again' : 'Sign in with Google'}
+          variant={youtubeSignedIn ? 'ghost' : 'primary'}
+          loading={signingIn}
+          onPress={signInToYouTube}
+        />
       </Card>
 
       <Card>

@@ -5,7 +5,7 @@ import { Badge, Button, Card, Empty, Field, H2, H3, ProgressBar, Row, Screen, Se
 import { colors, space } from '@/theme';
 import { useStudio } from '@/store';
 import { getKey, setKey } from '@/services/keys';
-import { authorize, ensureFreshToken, setThumbnail, uploadVideo, watchUrl, type StoredTokens } from '@/services/youtube';
+import { ensureFreshToken, setThumbnail, uploadVideo, watchUrl, type StoredTokens } from '@/services/youtube';
 import { buildDescription } from '@/core/timestamps';
 import type { LongScript, ShortScript } from '@/core/types';
 import type { RootStackParamList } from '@/navigation/types';
@@ -17,7 +17,6 @@ export default function PublishScreen() {
   const updateProject = useStudio((s) => s.updateProject);
   const patchAssets = useStudio((s) => s.patchAssets);
 
-  const [clientId, setClientId] = useState('');
   const [signedIn, setSignedIn] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -32,7 +31,6 @@ export default function PublishScreen() {
 
   useEffect(() => {
     void (async () => {
-      setClientId((await getKey('youtubeClientId')) ?? '');
       setSignedIn(Boolean(await getKey('youtubeTokens')));
     })();
   }, []);
@@ -57,22 +55,6 @@ export default function PublishScreen() {
     updateProject(project.id, {
       publish: { title, description, tags, privacyStatus: privacy },
     });
-
-  const signIn = async () => {
-    if (!clientId.trim()) {
-      Alert.alert('Client ID required', 'Paste your Google OAuth Android client ID first.');
-      return;
-    }
-    try {
-      await setKey('youtubeClientId', clientId.trim());
-      const tokens = await authorize(clientId.trim());
-      await setKey('youtubeTokens', JSON.stringify(tokens));
-      setSignedIn(true);
-      Alert.alert('Signed in', 'This device can now publish to your channel.');
-    } catch (e) {
-      Alert.alert('Sign-in failed', e instanceof Error ? e.message : String(e));
-    }
-  };
 
   const publish = async () => {
     if (uploadingRef.current) return;
@@ -147,20 +129,11 @@ export default function PublishScreen() {
 
       {!signedIn ? (
         <Card>
-          <H3>Connect your channel</H3>
+          <H3>Not connected</H3>
           <Small>
-            Create an OAuth client of type Android in Google Cloud Console, with package name
-            com.mindfiles.studio, then paste its client ID. Android clients issue no secret, so nothing
-            sensitive is stored in the app.
+            Publishing needs Google sign-in. It lives in Settings, under YouTube, alongside the other
+            credentials — paste your Android OAuth client ID there and sign in, then come back.
           </Small>
-          <Field
-            label="Android OAuth client ID"
-            value={clientId}
-            onChangeText={setClientId}
-            placeholder="xxxxx.apps.googleusercontent.com"
-            autoCapitalize="none"
-          />
-          <Button label="Sign in with Google" onPress={signIn} />
         </Card>
       ) : null}
 
