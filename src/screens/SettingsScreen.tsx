@@ -12,7 +12,8 @@ import { diagnoseKey, verifyElevenLabsKey } from '@/services/elevenlabs';
 import { listModels, PROVIDERS, type ProviderId } from '@/services/scriptProvider';
 import { listImageModels } from '@/services/imagen';
 import * as audioCache from '@/services/audioCache';
-import { formatBytes, importInto, workspaceSize } from '@/services/workspace';
+import { formatBytes, workspaceSize } from '@/services/workspace';
+import { prepareMascot } from '@/services/mascotPrep';
 import type { Emotion } from '@/core/mascot';
 import { useMounted } from '@/util/useMounted';
 
@@ -211,8 +212,16 @@ export default function SettingsScreen() {
     if (result.canceled || !result.assets?.length) return;
 
     try {
-      const uri = await importInto('stills', '_mascot', result.assets[0].uri, `${emotion}.png`);
-      updateSettings({ mascotAssets: { ...settings.mascotAssets, [emotion]: uri } });
+      const prepared = await prepareMascot(result.assets[0].uri, emotion);
+      updateSettings({ mascotAssets: { ...settings.mascotAssets, [emotion]: prepared.uri } });
+
+      const pct = Math.round(prepared.report.clearedFraction * 100);
+      Alert.alert(
+        prepared.report.warning ? 'Imported, but check it' : 'Imported',
+        prepared.report.warning
+          ? `${prepared.report.warning}\n\n${pct}% of the image was made transparent.`
+          : `Background removed — ${pct}% of the image is now transparent. Enclosed white, such as the eyes, is preserved.`
+      );
     } catch (e) {
       Alert.alert('Import failed', e instanceof Error ? e.message : String(e));
     }

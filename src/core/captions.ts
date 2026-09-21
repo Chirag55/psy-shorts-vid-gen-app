@@ -32,11 +32,18 @@ export function isBlank(frame: CaptionFrame): boolean {
 }
 
 export interface CaptionOptions {
-  /** Words per on-screen phrase. */
+  /** Words per on-screen phrase. Ignored when `singleWord` is set. */
   phraseSize?: number;
   /**
-   * Short form highlights the active word; long form shows a static phrase,
-   * because a 3-5 word chunk at 46pt reads better without motion.
+   * Shows one word at a time, alone on screen, rather than a phrase with the
+   * spoken word highlighted. This is what the published Shorts actually do, and
+   * it reads far better at arm's length on a phone: one large word carries from
+   * a thumbnail-sized viewport, where a four-word phrase does not.
+   */
+  singleWord?: boolean;
+  /**
+   * Highlights the spoken word within a phrase. Only meaningful when
+   * `singleWord` is off.
    */
   highlightActiveWord?: boolean;
   /** Frames shorter than this are merged forward — sub-frame flashes just strobe. */
@@ -56,6 +63,17 @@ export function buildCaptionFrames(words: WordTiming[], opts: CaptionOptions = {
   const minDuration = opts.minFrameDuration ?? 0.06;
 
   if (!words.length) return [];
+
+  // One word per frame, each held until the next begins so there is never a
+  // blank gap mid-sentence.
+  if (opts.singleWord) {
+    const single = words.map((word, i) => ({
+      tokens: [{ text: word.word, active: true }],
+      start: word.start,
+      end: i + 1 < words.length ? words[i + 1].start : word.end,
+    }));
+    return fillGaps(mergeShortFrames(single, minDuration));
+  }
 
   const phrases = groupIntoPhrases(words, phraseSize);
   const raw: CaptionFrame[] = [];

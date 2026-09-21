@@ -3,7 +3,7 @@ import { buildCaptionFrames } from '@/core/captions';
 import { connectiveStillDuration, kenBurnsFilter, setptsFactor } from '@/core/kenburns';
 import { longFormMascotWindows, shortFormMascotWindows, type Emotion, type MascotWindow } from '@/core/mascot';
 import type { LongScript, Project, ShortScript, WordTiming } from '@/core/types';
-import { captionBandY, captionStyleFor, renderCaptionFrames } from './captionRenderer';
+import { captionBandY, captionStyleFor, preloadCaptionFont, renderCaptionFrames } from './captionRenderer';
 import { probeDuration, run, type LogSink } from './ffmpeg';
 import { bucketDir, bucketFile, toFsPath, writeText } from './workspace';
 import { File } from 'expo-file-system';
@@ -39,13 +39,16 @@ function normaliseVideo(label: string, out: string, w: number, h: number): strin
 }
 
 /**
- * Keys the white background out of a Professor Hoot JPG and scales him to the
- * overlay width. This replaces the desktop studio's flood-fill transparency
- * extraction — `colorkey` does the same job in one filter, with soft edges
- * instead of the fringing a hard flood fill leaves behind.
+ * Scales an already-transparent mascot PNG to the overlay width.
+ *
+ * No colour keying happens here any more, and must not: this mascot is mostly
+ * white — white face, white belly, white eyes — so keying white would punch
+ * holes straight through him. Background removal is a border flood fill done
+ * once at import (services/mascotPrep.ts), which only clears background
+ * connected to the edge and leaves enclosed white alone.
  */
 function mascotChain(label: string, out: string, width: number): string {
-  return `[${label}]scale=${width}:-1,colorkey=0xFFFFFF:0.30:0.08,format=rgba[${out}]`;
+  return `[${label}]scale=${width}:-1,format=rgba[${out}]`;
 }
 
 function overlayWithWindow(base: string, mascot: string, out: string, x: string, y: string, win: MascotWindow): string {
@@ -95,10 +98,16 @@ async function prepareCaptions(
   if (!words.length) return null;
 
   const frames = buildCaptionFrames(words, {
-    phraseSize: mode === 'short' ? 4 : 4,
-    highlightActiveWord: mode === 'short',
+    // Shorts show one word at a time, as the published videos do; long form
+    // keeps phrases, which suit a widescreen frame watched from further away.
+    singleWord: mode === 'short',
+    phraseSize: 4,
+    highlightActiveWord: false,
   });
   if (!frames.length) return null;
+
+  // Bundled typeface must be resolved before the first frame is drawn.
+  await preloadCaptionFont();
 
   const style = captionStyleFor(mode, W, H);
   const rendered = await renderCaptionFrames({

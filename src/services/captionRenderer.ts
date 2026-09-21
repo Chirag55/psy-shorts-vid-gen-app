@@ -1,3 +1,4 @@
+import { Asset } from 'expo-asset';
 import type { SkFont, SkSurface, SkTypeface } from '@shopify/react-native-skia';
 
 /**
@@ -64,6 +65,35 @@ export interface RenderCaptionsOptions {
   signal?: AbortSignal;
 }
 
+/**
+ * Anton, bundled with the app.
+ *
+ * The published Shorts are set in Anton, and matching them is the whole point —
+ * relying on a system font meant captions rendered in whatever condensed face
+ * the device happened to ship, which is visibly not the same typeface. Loaded
+ * once and reused; the module is long-lived so the cache never needs clearing.
+ */
+let cachedTypeface: SkTypeface | null = null;
+let typefaceLoadFailed = false;
+
+export async function preloadCaptionFont(): Promise<void> {
+  if (cachedTypeface || typefaceLoadFailed) return;
+
+  try {
+    const asset = Asset.fromModule(require('../../assets/fonts/Anton-Regular.ttf'));
+    await asset.downloadAsync();
+    const uri = asset.localUri ?? asset.uri;
+
+    const { Skia } = skia();
+    const data = await Skia.Data.fromURI(uri);
+    cachedTypeface = Skia.Typeface.MakeFreeTypeFaceFromData(data);
+    if (!cachedTypeface) typefaceLoadFailed = true;
+  } catch {
+    // Fall back to a system face rather than failing the whole render.
+    typefaceLoadFailed = true;
+  }
+}
+
 function loadFont(size: number): SkFont {
   // System fonts only. Shipping a font file would bloat the APK, and Skia's
   // system manager already resolves a bold sans that reads well at this size.
@@ -73,6 +103,10 @@ function loadFont(size: number): SkFont {
   // Android build — so fall all the way through to Skia's default rather than
   // handing a null typeface to Skia.Font.
   const { Skia, FontStyle } = skia();
+
+  // Bundled Anton first — this is what makes captions match the channel.
+  if (cachedTypeface) return Skia.Font(cachedTypeface, size);
+
   try {
     const fontMgr = Skia.FontMgr.System();
     const typeface =
@@ -249,9 +283,10 @@ export function captionStyleFor(mode: 'short' | 'long', width: number, height: n
   if (mode === 'short') {
     const scale = width / 1080;
     return {
-      fontSize: Math.round(58 * scale),
+      // One word alone carries a larger face than a wrapped phrase could.
+      fontSize: Math.round(76 * scale),
       width,
-      height: Math.round(360 * scale),
+      height: Math.round(170 * scale),
       outlineWidth: Math.max(2, Math.round(6 * scale)),
       lineGap: Math.round(16 * scale),
       sidePadding: Math.round(60 * scale),
@@ -272,9 +307,12 @@ export function captionStyleFor(mode: 'short' | 'long', width: number, height: n
 /** Vertical placement of the band, keeping clear of platform UI. */
 export function captionBandY(mode: 'short' | 'long', canvasHeight: number, bandHeight: number): number {
   if (mode === 'short') {
-    // Sits above the Shorts action rail rather than under it.
-    return Math.round(canvasHeight - bandHeight - canvasHeight * 0.17);
+    // Centred slightly above the midline, matching the published Shorts.
+    // A lower band collides with the Shorts action rail and the title overlay,
+    // and reads as an afterthought; mid-frame sits over the subject and is
+    // legible at the size a Short is actually watched.
+    return Math.round(canvasHeight * 0.5 - bandHeight / 2);
   }
-  // Clears the YouTube scrub bar.
+  // Long form still clears the YouTube scrub bar.
   return Math.round(canvasHeight - bandHeight - canvasHeight * 0.06);
 }
