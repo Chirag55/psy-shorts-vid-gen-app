@@ -1,6 +1,6 @@
 # Installable build
 
-`mindfiles-studio-v1.3.0-arm64.apk` — signed, ready to sideload.
+`mindfiles-studio-v1.4.0-arm64.apk` — signed, ready to sideload.
 
 ## Install it
 
@@ -15,6 +15,20 @@ Verify the download if you want to:
 ```bash
 sha256sum -c SHA256SUMS
 ```
+
+## What changed in 1.4.0
+
+- **Strategist round one.** Scripts must now name the specific tactic rather than a
+  generic label, and frame it as something being done *to* the viewer. Topic
+  ideation is weighted toward the rising tactic cluster. Underperforming angles
+  are now an explicit avoid signal instead of neutral context.
+- **New "Three tactics" short format** — an enumerated variant that fits three
+  named tactics inside the same word budget.
+- **Provider outages no longer kill a generation.** A Gemini 503 used to fail
+  instantly with raw JSON; transient failures now retry with backoff and every
+  error reads as a sentence.
+- **YouTube sign-in moved into Settings**, next to the other credentials, with a
+  button that shows the package name and SHA-1 for the Google Cloud OAuth client.
 
 ## What changed in 1.3.0 — channel parity
 
@@ -81,7 +95,7 @@ package name.
 
 | | |
 | :--- | :--- |
-| Version | 1.3.0 (versionCode 1) |
+| Version | 1.4.0 (versionCode 1) |
 | Package | `com.mindfiles.studio` |
 | Architecture | `arm64-v8a` only — see below |
 | Min Android | 7.0 (API 24) |
