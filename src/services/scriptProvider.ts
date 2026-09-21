@@ -1,4 +1,5 @@
 import type { LongScript, ShortScript } from '@/core/types';
+import type { ShortStructure } from '@/core/prompts';
 import * as gemini from './gemini';
 import * as anthropic from './anthropic';
 import { getKey } from './keys';
@@ -37,6 +38,8 @@ export class NoProviderKeyError extends Error {}
 
 interface Ctx {
   provider: ProviderId;
+  /** Short-form shape: one tactic in depth, or three enumerated. */
+  structure?: ShortStructure;
   model?: string;
   signal?: AbortSignal;
   /** Channel performance summary appended to the prompt, when available. */
@@ -64,9 +67,11 @@ export async function generateShortScript(
   const apiKey = await keyFor(ctx.provider);
   const perf = ctx.performanceContext ?? '';
 
+  const structure = ctx.structure ?? 'single';
+
   return ctx.provider === 'anthropic'
-    ? anthropic.generateShortScript({ apiKey, model: ctx.model, signal: ctx.signal }, topic, category, recentArchetypes, perf)
-    : gemini.generateShortScript({ apiKey, model: ctx.model, signal: ctx.signal }, topic, category, recentArchetypes, perf);
+    ? anthropic.generateShortScript({ apiKey, model: ctx.model, signal: ctx.signal }, topic, category, recentArchetypes, perf, structure)
+    : gemini.generateShortScript({ apiKey, model: ctx.model, signal: ctx.signal }, topic, category, recentArchetypes, perf, structure);
 }
 
 export async function generateLongScript(
@@ -110,3 +115,4 @@ export const DEFAULT_MODELS: Record<ProviderId, string> = {
 };
 
 export type { TopicIdea };
+export type { ShortStructure };

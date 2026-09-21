@@ -75,10 +75,15 @@ export function buildPerformanceContext(summary: PerformanceSummary, minSample =
     .map((v) => `- "${v.title}" — ${formatCount(v.viewCount)} views`)
     .join('\n');
 
+  // Underperformers carry an explicit avoid instruction rather than sitting
+  // alongside the winners with identical framing. Presented neutrally the model
+  // treats them as more examples to learn from, which is the opposite of what
+  // they are evidence for.
   const weak = summary.weakPerformers.length
-    ? `\n\nThese underperformed relative to the channel median of ${formatCount(summary.medianViews)} views:\n${summary.weakPerformers
+    ? `\n\nAVOID THESE ANGLES. They underperformed against the channel median of ${formatCount(summary.medianViews)} views:\n${summary.weakPerformers
         .map((v) => `- "${v.title}" — ${formatCount(v.viewCount)} views`)
-        .join('\n')}`
+        .join('\n')}\nDo not reuse their framing, their angle, or the kind of promise they make. If the
+topic you have been given resembles one of these, find a different way into it.`
     : '';
 
   return `

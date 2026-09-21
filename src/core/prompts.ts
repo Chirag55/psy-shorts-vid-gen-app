@@ -17,6 +17,21 @@ spectacles. He reacts to revelations; he never narrates.
 CADENCE LAW: All spoken copy is bound to ${WORDS_PER_SECOND} words per second. Word counts are
 not stylistic suggestions — they are timing constraints. Exceeding them breaks the render.
 
+NAME THE TACTIC (this is the channel's single strongest signal):
+Every script is about one specific, named psychological mechanism — love bombing,
+foot-in-the-door, triangulation, sunk cost, anchoring, social proof, intermittent
+reinforcement, and so on. Never build a script around a generic label such as
+"manipulation", "psychology", "toxic behaviour" or "the brain". Naming the tactic
+is what reads as expert knowledge; a generic label reads as filler, and measurably
+underperforms on this channel.
+
+POINT IT AT THE VIEWER:
+Frame the mechanism as something being done TO the viewer, happening to them,
+right now — not as a skill for reading or influencing other people. "This is
+being done to you" consistently outperforms "here is how to read someone" on this
+channel by a wide margin, even on near-identical subject matter. The viewer is the
+target of the tactic, not the practitioner of it.
+
 CHARACTER RULES:
 - Never dress characters in occupational costume (scrubs, firefighter gear, pilot jackets)
   unless the script explicitly analyses that profession.
@@ -32,7 +47,39 @@ VISUAL PROMPT RULES:
 - Continuity: clips after the first must open with
   "Continuation of previous clip: The exact same character [restate hair, wardrobe, setting]..."`;
 
-export function shortFormInstruction(topic: string, category: string, recentArchetypes: string[]): string {
+/**
+ * Structures a short can take.
+ *
+ * `single` is one tactic explored in depth; `list` enumerates three, which is a
+ * shape that travels well in this niche. Both live inside the same total word
+ * budget — the list variant subdivides the mechanism beat rather than extending
+ * runtime.
+ */
+export type ShortStructure = 'single' | 'list';
+
+/**
+ * The enumerated variant. The mechanism beat is subdivided rather than the video
+ * lengthened, so the cadence law still holds and the render is unaffected.
+ */
+const LIST_VARIANT = `
+
+VARIANT — ENUMERATED LIST:
+This script counts off THREE named tactics instead of exploring one. Adjust the beats:
+- HOOK still names what is coming and MUST include the count ("Three tactics being
+  used on you right now" style, but never that exact phrasing).
+- MECHANISM becomes three micro-beats of 10-13 words each, one per tactic. Each names
+  its tactic outright and gives the single most recognisable way it shows up. No
+  preamble between them — cut straight from one to the next.
+- REFRAME closes on what all three have in common.
+The total word budget is UNCHANGED. Three tactics in the same ${SHORT_WORD_MAX} words means
+each is stated, not explained. Brevity is the format.`;
+
+export function shortFormInstruction(
+  topic: string,
+  category: string,
+  recentArchetypes: string[],
+  structure: ShortStructure = 'single'
+): string {
   const avoid = recentArchetypes.length
     ? `\n\nARCHETYPES USED RECENTLY — DO NOT REUSE ANY OF THESE:\n${recentArchetypes.map((a) => `- ${a}`).join('\n')}`
     : '';
@@ -46,13 +93,17 @@ CATEGORY: ${category}
 
 STRUCTURE — exactly three beats, ${SHORT_WORD_MIN}-${SHORT_WORD_MAX} spoken words TOTAL across all three.
 Never exceed ${SHORT_WORD_MAX} words. This is a hard constraint.
+${structure === 'list' ? LIST_VARIANT : ''}
 
-1. HOOK (12-16 words): A counterintuitive claim that stops the scroll. Absolutely no
+1. HOOK (12-16 words): A counterintuitive claim that stops the scroll. It MUST name the
+   specific tactic — the actual term for it — not a generic category. Absolutely no
    generic openers ("Did you know", "Have you ever"). Open mid-thought, at stakes.
-2. MECHANISM (32-38 words): One concrete psychological principle, explained with zero
-   academic jargon, grounded in a specific relatable moment.
-3. REFRAME (14-18 words): A practical takeaway or empowered boundary. End on a punchy
-   one-liner that lands like a closing door.
+2. MECHANISM (32-38 words): The named tactic explained with zero academic jargon, framed
+   as something being done TO the viewer in a specific, recognisable moment they have
+   lived through. Not "how to spot someone doing X" — "X is being done to you, here is
+   how it works on you".
+3. REFRAME (14-18 words): A practical takeaway or empowered boundary that returns control
+   to the viewer. End on a punchy one-liner that lands like a closing door.
 
 VISUALS: Write one ~10 second continuous Veo clip prompt per beat.
 - Clip 1 establishes the character: hair, wardrobe, setting, lighting.
@@ -104,15 +155,44 @@ Also return "characterDescription" (hair, wardrobe, setting as one reusable phra
 "archetype" (a two-to-four word character label).${avoid}`;
 }
 
+/**
+ * Tactics the strategist identified as rising in demand with manageable
+ * competition. Ideation is weighted toward these rather than restricted to
+ * them — a hard filter would starve the bank as the list ages.
+ */
+export const PRIORITY_TACTICS = [
+  'love bombing',
+  'foot-in-the-door',
+  'sunk cost',
+  'anchoring bias',
+  'triangulation',
+] as const;
+
+/**
+ * Topics whose search demand is falling while competition rises. Not banned —
+ * anything already in the pipeline still ships — but not led with.
+ */
+export const DEPRIORITISED_TACTICS = ['gaslighting'] as const;
+
 /** Topic ideation prompt for refilling the on-device topic bank. */
 export function topicIdeasInstruction(category: string, count: number, existing: string[]): string {
   return `${BRAND_BIBLE}
 
 TASK: Propose ${count} fresh video topics for the category "${category}".
 
-Each topic must be a specific psychological pattern with an observable behavioural
-signature — not a broad field. "Why we reread messages we already memorised" is a topic;
-"anxiety" is not.
+Each topic must name a SPECIFIC psychological tactic with an observable behavioural
+signature — not a broad field, and not a generic label. "Why we reread messages we
+already memorised" is a topic; "anxiety" is not. "Foot-in-the-door: why a tiny favour
+makes the next one impossible to refuse" is a topic; "manipulation tactics" is not.
+
+Frame each so the viewer is the one it is happening TO.
+
+WEIGHT TOWARD THESE — currently rising in demand with beatable competition:
+${PRIORITY_TACTICS.map((t) => `- ${t}`).join('\n')}
+At least half the proposals should centre on one of these or a close relative.
+
+DO NOT LEAD WITH: ${DEPRIORITISED_TACTICS.join(', ')} — demand is falling and competition
+is high. Propose it only if it is the single best fit for the category.
 
 Do not propose anything that overlaps with these existing topics:
 ${existing.length ? existing.map((t) => `- ${t}`).join('\n') : '(none yet)'}`;

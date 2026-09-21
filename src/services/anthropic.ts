@@ -7,7 +7,12 @@ import {
   ShortScriptSchema,
   TopicIdeasSchema,
 } from '@/core/scriptSchemas';
-import { longFormInstruction, shortFormInstruction, topicIdeasInstruction } from '@/core/prompts';
+import {
+  longFormInstruction,
+  shortFormInstruction,
+  topicIdeasInstruction,
+  type ShortStructure,
+} from '@/core/prompts';
 import { withStyleLock } from '@/core/styleLock';
 import { moveForChapter } from '@/core/kenburns';
 import type { LongScript, ShortScript } from '@/core/types';
@@ -99,11 +104,12 @@ export async function generateShortScript(
   topic: string,
   category: string,
   recentArchetypes: string[] = [],
-  performanceContext = ''
+  performanceContext = '',
+  structure: ShortStructure = 'single'
 ): Promise<ShortScript> {
   const raw = await parseWith(
     opts,
-    shortFormInstruction(topic, category, recentArchetypes) + performanceContext,
+    shortFormInstruction(topic, category, recentArchetypes, structure) + performanceContext,
     ShortScriptSchema
   );
 

@@ -1,8 +1,14 @@
 import { LONGFORM_RESPONSE_SCHEMA, SHORTFORM_RESPONSE_SCHEMA, TOPIC_IDEAS_SCHEMA } from '@/core/schemas';
-import { longFormInstruction, shortFormInstruction, topicIdeasInstruction } from '@/core/prompts';
+import {
+  longFormInstruction,
+  shortFormInstruction,
+  topicIdeasInstruction,
+  type ShortStructure,
+} from '@/core/prompts';
 import { withStyleLock } from '@/core/styleLock';
 import { moveForChapter } from '@/core/kenburns';
 import type { LongScript, ShortScript } from '@/core/types';
+import { describeTransient, isTransient, withRetry } from '@/core/retry';
 import {
   describeValidationError,
   LongScriptSchema,
@@ -36,41 +42,66 @@ async function generateJson<T>(
 ): Promise<T> {
   const model = opts.model || DEFAULT_GEMINI_MODEL;
 
-  const res = await fetch(`${API_BASE}/models/${model}:generateContent`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': opts.apiKey,
-    },
-    signal: opts.signal,
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: instruction }] }],
-      generationConfig: {
-        temperature: 0.7,
-        topP: 0.95,
-        responseMimeType: 'application/json',
-        responseSchema: schema,
-      },
-    }),
+  // Overload and rate-limit responses clear on their own, so they are retried
+  // with backoff rather than shown to the user as a dead end.
+  const attempt = await withRetry<string>(async () => {
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE}/models/${model}:generateContent`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': opts.apiKey,
+        },
+        signal: opts.signal,
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: instruction }] }],
+          generationConfig: {
+            temperature: 0.7,
+            topP: 0.95,
+            responseMimeType: 'application/json',
+            responseSchema: schema,
+          },
+        }),
+      });
+    } catch (error) {
+      // A dropped connection is as transient as a 503.
+      if (opts.signal?.aborted) throw error;
+      return { status: 0, retryable: true };
+    }
+
+    if (res.ok) return { value: await res.text(), status: res.status, retryable: false };
+    return { status: res.status, retryable: isTransient(res.status) };
   });
 
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '');
+  if (attempt.value === undefined) {
+    const status = attempt.status;
+
+    if (isTransient(status) || status === 0) {
+      throw new GeminiError(
+        status === 0
+          ? 'Could not reach Gemini. Check the connection and try again.'
+          : describeTransient(status, 'Gemini')
+      );
+    }
 
     // A retired model is the most common failure and the least obvious from a
     // raw 404 body, so name the fix rather than echoing Google's JSON.
-    if (res.status === 404) {
+    if (status === 404) {
       throw new GeminiError(
         `The model "${model}" is not available on this key. Open Settings and choose another — "Load available models" lists what your key can actually use.`
       );
     }
-    if (res.status === 400 && detail.includes('API key not valid')) {
-      throw new GeminiError('That Gemini API key was rejected.');
+    if (status === 401 || status === 403) {
+      throw new GeminiError('Gemini rejected the API key. Check it in Settings.');
     }
-    throw new GeminiError(`Gemini ${res.status}: ${detail.slice(0, 400) || res.statusText}`);
+    throw new GeminiError(`Gemini returned ${status}.`);
   }
 
-  const payload = await res.json();
+  const payload = JSON.parse(attempt.value) as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>;
+    promptFeedback?: { blockReason?: string };
+  };
   const text: string | undefined = payload?.candidates?.[0]?.content?.parts?.[0]?.text;
 
   if (!text) {
@@ -120,11 +151,12 @@ export async function generateShortScript(
   topic: string,
   category: string,
   recentArchetypes: string[] = [],
-  performanceContext = ''
+  performanceContext = '',
+  structure: ShortStructure = 'single'
 ): Promise<ShortScript> {
   const raw = await generateJson(
     opts,
-    shortFormInstruction(topic, category, recentArchetypes) + performanceContext,
+    shortFormInstruction(topic, category, recentArchetypes, structure) + performanceContext,
     SHORTFORM_RESPONSE_SCHEMA,
     (value) => {
       const result = ShortScriptSchema.safeParse(value);

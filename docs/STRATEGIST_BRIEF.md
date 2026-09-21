@@ -11,7 +11,11 @@ what's a request. Put every request in **§8 Change Requests**, using the templa
 there. Edit the body only to correct something that's factually wrong about the
 app today, and say so in §8 if you do.
 
-**Status:** app v1.2.1, Android, single user. Last updated by the engineer.
+**Status:** app v1.4.0, Android, single user. Last updated by the engineer.
+
+**Round 1 implemented.** CR-1, CR-2, CR-3, CR-4 and CR-6 are live — see §11 for
+what shipped and what each one actually changed. CR-5 (YouTube Analytics) is not
+done yet and is the largest remaining item.
 
 ---
 
@@ -299,3 +303,40 @@ Answers here shape what gets built next.
 - **ElevenLabs free tier is 10,000 characters/month.** The app hard-blocks at
   9,000 as a safety ceiling and caches every synthesis so identical text is never
   billed twice.
+
+
+---
+
+## 11. Implementation log
+
+### Round 1 — shipped in v1.4.0
+
+**CR-1 — Name the tactic.** Added to the brand bible as a top-level law, so it
+governs long form and topic ideation too, not just the short hook. The hook beat
+now requires the actual term for the mechanism; generic labels ("manipulation",
+"psychology", "the brain") are explicitly banned.
+
+**CR-2 — Point it at the viewer.** Also promoted to the brand bible. The mechanism
+beat now requires "this is being done to you" framing and explicitly rejects "how
+to read someone" framing.
+
+**CR-3 — Weight topics toward the rising cluster.** Topic ideation now names the
+five priority tactics and asks for at least half the proposals to centre on them.
+Gaslighting is deprioritised rather than banned — anything already in the pipeline
+still ships.
+
+**CR-4 — Numbered-list variant.** Shipped as a picker on the generate screen:
+"One tactic" or "Three tactics". The list variant subdivides the mechanism beat
+into three micro-beats of 10–13 words and leaves the total word budget untouched,
+so runtime and the cadence law are unaffected.
+
+**CR-6 — Underperformers as an avoid signal.** The bottom five now carry an
+explicit "AVOID THESE ANGLES" instruction telling the model not to reuse their
+framing or the kind of promise they make.
+
+### Not yet done
+
+**CR-5 — YouTube Analytics for retention.** Needs a second OAuth scope
+(`yt-analytics.readonly`) and a different API host. It also forces a re-consent,
+since the granted scope set changes. Worth doing; it is the one change here that
+alters *which* videos get treated as wins, rather than how they are written.

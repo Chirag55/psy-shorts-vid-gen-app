@@ -5,7 +5,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Body, Button, Card, Field, H2, Row, Screen, Segmented, Small } from '@/components/ui';
 import { colors, space } from '@/theme';
 import { useStudio } from '@/store';
-import { generateLongScript, generateShortScript } from '@/services/scriptProvider';
+import { generateLongScript, generateShortScript, type ShortStructure } from '@/services/scriptProvider';
 import { fetchPerformanceContext } from '@/services/performance';
 import { validateScript } from '@/core/guardrails';
 import type { RootStackParamList } from '@/navigation/types';
@@ -35,6 +35,7 @@ export default function GenerateScreen() {
   const [topic, setTopic] = useState(route.params.topic ?? '');
   const [category, setCategory] = useState(route.params.category ?? CATEGORIES[0]);
   const [chapters, setChapters] = useState('4');
+  const [structure, setStructure] = useState<ShortStructure>('single');
   const [busy, setBusy] = useState(false);
   const mounted = useMounted();
   // Synchronous guard: two taps in one tick would both pass a state check and
@@ -58,7 +59,7 @@ export default function GenerateScreen() {
 
       // Never blocks generation: returns '' if YouTube is not connected or fails.
       const performanceContext = await fetchPerformanceContext(mode === 'short');
-      const ctx = { provider: settings.scriptProvider, model, performanceContext };
+      const ctx = { provider: settings.scriptProvider, model, performanceContext, structure };
 
       const script =
         mode === 'short'
@@ -146,7 +147,24 @@ export default function GenerateScreen() {
 
         {mode === 'long' ? (
           <Field label="Chapters (3–6)" value={chapters} onChangeText={setChapters} keyboardType="numeric" />
-        ) : null}
+        ) : (
+          <>
+            <Small style={{ marginBottom: space.xs }}>Structure</Small>
+            <Segmented
+              value={structure}
+              onChange={setStructure}
+              options={[
+                { value: 'single', label: 'One tactic' },
+                { value: 'list', label: 'Three tactics' },
+              ]}
+            />
+            <Small style={{ marginBottom: space.md }}>
+              {structure === 'single'
+                ? 'One named tactic explored in depth.'
+                : 'Counts off three named tactics in the same word budget — each stated, not explained.'}
+            </Small>
+          </>
+        )}
 
         <Button label={busy ? 'Writing…' : 'Generate script'} onPress={generate} loading={busy} />
       </Card>
