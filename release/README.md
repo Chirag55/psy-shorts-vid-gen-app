@@ -1,6 +1,6 @@
 # Installable build
 
-`mindfiles-studio-v1.2.1-arm64.apk` — signed, ready to sideload.
+`mindfiles-studio-v1.3.0-arm64.apk` — signed, ready to sideload.
 
 ## Install it
 
@@ -15,6 +15,19 @@ Verify the download if you want to:
 ```bash
 sha256sum -c SHA256SUMS
 ```
+
+## What changed in 1.3.0 — channel parity
+
+Compared against screenshots of a published Short:
+
+- **Mascot cutout fixed.** Background removal was keying out every white pixel,
+  which would have punched holes through a mostly-white mascot — face, belly and
+  eyes. Replaced with the border flood fill the desktop studio uses, run once at
+  import, which only clears background connected to the edge.
+- **Anton is bundled** and used for captions, instead of whatever condensed face
+  the device happened to ship.
+- **Shorts show one word at a time**, mid-frame, at 76px — matching the channel
+  rather than a phrase in a low band.
 
 ## What changed in 1.2.1
 
@@ -68,7 +81,7 @@ package name.
 
 | | |
 | :--- | :--- |
-| Version | 1.2.1 (versionCode 1) |
+| Version | 1.3.0 (versionCode 1) |
 | Package | `com.mindfiles.studio` |
 | Architecture | `arm64-v8a` only — see below |
 | Min Android | 7.0 (API 24) |
