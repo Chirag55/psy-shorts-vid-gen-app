@@ -1,165 +1,82 @@
 # Installable build
 
-`mindfiles-studio-v1.6.0-arm64.apk` — signed, ready to sideload.
+`mindfiles-studio-v1.7.0-arm64.apk` — signed, ready to sideload.
 
 ## Install it
 
 1. Open this file's page on your phone and tap **Download**.
 2. Tap the downloaded file.
 3. Android will ask permission to install from this source — allow it.
-4. Open **The Mind Files Studio**, go to **Settings**, and paste your Gemini and
-   ElevenLabs API keys.
+4. Open **The Mind Files Studio**, go to **Settings**, and paste your Gemini or
+   Claude key and your ElevenLabs key.
 
-Verify the download if you want to:
+The signing key has not changed, so this installs over an earlier version and
+keeps your projects, keys and YouTube link. Verify the download if you want to:
 
 ```bash
 sha256sum -c SHA256SUMS
 ```
 
-## What changed in 1.6.0 — the native crash
+## What changed in 1.7.0 — the crash during assemble
 
-Mascot import and assemble both died hard, with no error popup. They shared one
-call: `Skia.Data.fromURI`, whose result went straight into a native decoder.
-Skia's URI loader does not throw when it cannot read a source — it returns empty
-data, and FreeType or the image decoder then segfaults, killing the process
-before any error handler can run.
+1.6.0 fixed one native crash and left a second one standing. The breadcrumb
+trail added in 1.6.0 named it: the app was dying inside *"Drawing 70 caption
+frames"*.
 
-For the font this was structural in release builds: a bundled asset is packed
-into the APK as an Android resource, which that loader cannot read. It worked in
-development and broke once packaged.
+Each caption frame allocated its own Skia offscreen surface. On Android
+`Surface.MakeOffscreen` is GPU-backed: it allocates a real backend texture
+through a thread-local `GrDirectContext` and wraps it in a release callback that
+calls `deleteBackendTexture`. Both the allocation and the eventual deletion need
+the EGL context current on the calling thread, and the deletion is deferred into
+Skia's command stream rather than happening immediately.
 
-- **`fromURI` is gone.** The font is embedded in the JS bundle as base64 and
-  decoded in JavaScript; mascot images are read as bytes through the filesystem.
-- **Buffers are validated against magic numbers before any native call**, so a
-  bad source gives a readable message instead of killing the app.
-- **Oversized mascot images are scaled down** rather than refused.
-- **Breadcrumbs.** Risky steps are written to disk before they run. If the app
-  ever dies hard again, the next launch names the exact step it died in.
+Rendering a short therefore created and dropped seventy GPU textures in a loop
+that also yielded to the event loop, leaving a queue of pending texture
+deletions racing the UI thread for the shared EGL display. Losing that race
+kills the process from native code — no JavaScript exception, nothing an error
+boundary can catch. Because it is a race, it was intermittent: the same chapter
+rendered fine once and took the app down the next time.
 
-## What changed in 1.5.0
+Nothing drawn offscreen here is ever shown on screen; it goes straight to a PNG.
+So none of it needs the GPU. `Surface.Make` is the CPU raster equivalent — plain
+memory, no EGL, no driver, no deferred destruction — and it is no slower in
+practice, because the GPU path has to read every pixel back across the bus
+anyway.
 
-- **No more owl in the Flow clips.** The brand bible described the mascot to the
-  script writer without telling it not to stage him, so he ended up in the Veo
-  prompts and the renderer composited a second one on top. Now banned in the
-  prompt rules and stripped from generated prompts after the fact.
-- **Native memory released during assembly.** Every caption frame allocated a
-  native image snapshot that was never disposed — dozens per short, hundreds per
-  long-form chapter — which is a plausible cause of the assembly crash. Also
-  fixed in mascot preparation.
-- **Reuse is now visible.** Assembly lists the clips, voiced tracks and stills it
-  is about to reuse, and the re-synthesise prompt no longer claims characters
-  will be spent when identical text is free.
+- The caption renderer now allocates **one** surface for the whole sequence and
+  clears it between frames. Snapshots are disposed before the next clear, so
+  Skia's copy-on-write never has to duplicate the buffer.
+- Mascot import had a second, independent version of the same bug: the downscale
+  path disposed the surface while the snapshot borrowing its texture was still
+  about to be read. Pixels are now read while the surface is alive, from a CPU
+  surface.
+- Surface allocation is centralised, sizes are validated before any native call,
+  and a test fails the build if `MakeOffscreen` is reintroduced anywhere.
 
-**Scripts generated before this build still have the owl in their stored
-prompts** — regenerate those. Clips already imported are fine.
+## Also in 1.7.0
 
-## What changed in 1.4.0
+- **The crash reporter was reporting crashes that never happened.** Completions
+  were matched to trail entries by array index, but the trail is capped, so
+  writing a new entry shifted the older ones — the completion then landed on the
+  wrong entry, or none. Entries carry an id now. A step that throws a normal
+  error is also closed, since a thrown error proves the process survived.
+- **Finer crash location.** Caption rendering records its position every twelve
+  frames, so any future crash names the iteration, not just the step.
+- **A dry run.** `npm run dryrun` executes the real renderer against real Skia
+  (CanvasKit) in Node: font decode, text layout, 70 short frames, six repeated
+  runs, 499 long-form frames, the mascot flood fill and the downscale path —
+  checking that the mascot's eyes survive and the border background is cleared.
+  This runs before a build now, rather than the phone being the first thing to
+  execute the drawing code.
 
-- **Strategist round one.** Scripts must now name the specific tactic rather than a
-  generic label, and frame it as something being done *to* the viewer. Topic
-  ideation is weighted toward the rising tactic cluster. Underperforming angles
-  are now an explicit avoid signal instead of neutral context.
-- **New "Three tactics" short format** — an enumerated variant that fits three
-  named tactics inside the same word budget.
-- **Provider outages no longer kill a generation.** A Gemini 503 used to fail
-  instantly with raw JSON; transient failures now retry with backoff and every
-  error reads as a sentence.
-- **YouTube sign-in moved into Settings**, next to the other credentials, with a
-  button that shows the package name and SHA-1 for the Google Cloud OAuth client.
-
-## What changed in 1.3.0 — channel parity
-
-Compared against screenshots of a published Short:
-
-- **Mascot cutout fixed.** Background removal was keying out every white pixel,
-  which would have punched holes through a mostly-white mascot — face, belly and
-  eyes. Replaced with the border flood fill the desktop studio uses, run once at
-  import, which only clears background connected to the edge.
-- **Anton is bundled** and used for captions, instead of whatever condensed face
-  the device happened to ship.
-- **Shorts show one word at a time**, mid-frame, at 76px — matching the channel
-  rather than a phrase in a low band.
-
-## What changed in 1.2.1
-
-- **"Test ElevenLabs key"** in Settings runs a real request and reports the
-  server's own message plus a description of the stored key — its length and
-  format, never the key itself.
-- **Masked and truncated keys are now named.** ElevenLabs reveals a key once, at
-  creation; copying it from the dashboard afterwards yields a masked value that
-  pastes cleanly and is then rejected with no clue why.
-
-## What changed in 1.2.0
-
-- **Voice credits are protected.** Synthesis is cached by a hash of text, voice
-  and model, so identical input never bills twice. Audio is written to disk the
-  instant it arrives, before anything that could fail. A batch authenticates once
-  up front, so a rejected key spends nothing.
-- **Fixed the Imagen 404.** Both image paths are supported now — Imagen via
-  `:predict` and the far more widely available Gemini image models via
-  `:generateContent` — and Settings lists what your key can actually call.
-- **Pasted keys are sanitised** of whitespace, non-breaking spaces, zero-width
-  characters and control codes, which are invisible in the input field and are a
-  common cause of a "rejected" key that is actually fine.
-
-## What changed in 1.1.0
-
-- **Fixed Gemini 404s.** The model id was hardcoded and Google retired it.
-  Settings now lists the models your key can actually call.
-- **Fixed ElevenLabs keys being rejected.** A key scoped to text-to-speech was
-  reported invalid, and — worse — a failed check refused to save it at all. Keys
-  are now always saved; verification only warns.
-- **Claude or Gemini** for script and topic generation, chosen in Settings.
-- **YouTube API key support** — browse published uploads and channel stats with
-  no sign-in.
-- **Scripts informed by results** — your best and worst performing titles feed
-  into generation when YouTube is connected.
-
-## What changed in 1.0.1
-
-- **Fixed the app failing to launch.** No native module is loaded while the JS
-  bundle is being evaluated any more; FFmpeg and Skia are required only when a
-  render starts.
-- **Startup errors are now visible.** If anything fails during startup, the app
-  shows the message and stack instead of closing silently.
-- **New Library tab** listing everything published to the channel, read back
-  through the YouTube Data API.
-
-Installing over 1.0.0 keeps your projects and keys — same signing key, same
-package name.
-
-## About this build
+## Build facts
 
 | | |
-| :--- | :--- |
-| Version | 1.6.0 (versionCode 1) |
+|---|---|
 | Package | `com.mindfiles.studio` |
-| Architecture | `arm64-v8a` only — see below |
-| Min Android | 7.0 (API 24) |
-| Size | 67 MB |
-| Signing | Android debug keystore — see `../docs/SAFETY.md` |
+| Version | 1.7.0 (versionCode 7) |
+| ABI | arm64-v8a only |
+| Signing SHA-1 | `5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25` |
 
-**arm64-v8a only** is deliberate. The FFmpeg library ships its JNI entry point
-for arm64 and x86 only; an `armeabi-v7a` build would install on a 32-bit phone
-and then crash on the first render. Every Android phone from roughly 2017
-onward is arm64. Details in `../docs/FFMPEG.md`.
-
-Native libraries are stored uncompressed, which is why the APK is larger than
-the download would otherwise be. That is the modern Android default: it makes
-the app start faster and use less space once installed.
-
-## Don't want the binary in git?
-
-It is here because a 68 MB file is too large to send through chat, and this was
-the only way to get you a link you can open on the phone. To drop it:
-
-```bash
-git rm -r release && git commit -m "Remove prebuilt APK"
-```
-
-That removes it going forward. The blob stays in history unless you rewrite it
-with `git filter-repo`. Rebuilding is always available instead:
-
-```bash
-npm install && npm run prebuild && npm run android
-```
+The SHA-1 is what the Google Cloud OAuth client is registered against; it is
+unchanged, so the YouTube link keeps working.
