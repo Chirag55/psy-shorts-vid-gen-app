@@ -2,7 +2,7 @@
   "expo": {
     "name": "The Mind Files Studio",
     "slug": "mindfiles-studio-mobile",
-    "version": "1.0.0",
+    "version": "1.7.0",
     "orientation": "portrait",
     "scheme": "mindfiles",
     "userInterfaceStyle": "dark",
@@ -12,7 +12,7 @@
     ],
     "android": {
       "package": "com.mindfiles.studio",
-      "versionCode": 1,
+      "versionCode": 7,
       "permissions": [
         "android.permission.INTERNET"
       ],

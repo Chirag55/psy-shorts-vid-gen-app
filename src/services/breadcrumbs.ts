@@ -13,19 +13,74 @@ import { Directory, File, Paths } from 'expo-file-system';
  */
 
 const FILE_NAME = 'breadcrumbs.log';
+const PROGRESS_FILE = 'progress.log';
 const MAX_ENTRIES = 60;
 
 export interface Breadcrumb {
+  /**
+   * Identity of this entry, independent of its position.
+   *
+   * Position is not usable: the trail is capped, so writing a new entry can
+   * shift every older one down by one. Matching on a remembered index meant a
+   * completion silently landed on the wrong entry — or on none — leaving
+   * finished work recorded as unfinished and reported as a crash that never
+   * happened.
+   */
+  id: number;
   at: number;
   label: string;
   /** False until the matching `finish` lands — an unfinished tail marks the crash. */
   finished: boolean;
 }
 
-function trailFile(): File {
+function diagnosticsDir(): Directory {
   const dir = new Directory(Paths.document, 'diagnostics');
   if (!dir.exists) dir.create({ intermediates: true });
-  return new File(dir, FILE_NAME);
+  return dir;
+}
+
+function trailFile(): File {
+  return new File(diagnosticsDir(), FILE_NAME);
+}
+
+/**
+ * Position inside a long-running step.
+ *
+ * A breadcrumb marks a whole step, but "drawing 70 caption frames" is not a
+ * precise enough place to die. Appending one trail entry per frame would mean
+ * re-serialising the whole log seventy times, so the position is kept in its
+ * own small file that is simply overwritten. Cheap enough for the inner loop,
+ * and it narrows a crash from a step to an iteration.
+ */
+export function noteProgress(detail: string): void {
+  try {
+    const file = new File(diagnosticsDir(), PROGRESS_FILE);
+    if (file.exists) file.delete();
+    file.create({ intermediates: true, overwrite: true });
+    file.write(detail);
+  } catch {
+    // Diagnostics must never be the reason something fails.
+  }
+}
+
+function readProgress(): string | null {
+  try {
+    const file = new File(diagnosticsDir(), PROGRESS_FILE);
+    if (!file.exists) return null;
+    const text = file.textSync().trim();
+    return text.length ? text : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearProgress(): void {
+  try {
+    const file = new File(diagnosticsDir(), PROGRESS_FILE);
+    if (file.exists) file.delete();
+  } catch {
+    // Nothing to do.
+  }
 }
 
 function readAll(): Breadcrumb[] {
@@ -33,7 +88,10 @@ function readAll(): Breadcrumb[] {
     const file = trailFile();
     if (!file.exists) return [];
     const parsed = JSON.parse(file.textSync()) as Breadcrumb[];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    // A trail left by an older build has no ids. Give them ones that cannot
+    // collide with this run's, so they are still reportable but never matched.
+    return parsed.map((e, i) => (typeof e.id === 'number' ? e : { ...e, id: -1 - i }));
   } catch {
     return [];
   }
@@ -50,33 +108,51 @@ function writeAll(entries: Breadcrumb[]): void {
   }
 }
 
+let nextId = Date.now();
+
 /**
  * Records that a risky step is starting, and returns a function to call when it
  * survived. Writing happens synchronously — an async write would still be
  * queued when the process dies.
  */
 export function mark(label: string): () => void {
+  const id = nextId++;
   const entries = readAll();
-  entries.push({ at: Date.now(), label, finished: false });
+  entries.push({ id, at: Date.now(), label, finished: false });
   writeAll(entries);
 
-  const index = Math.min(entries.length, MAX_ENTRIES) - 1;
+  let settled = false;
 
   return () => {
+    // Calling the finish function twice must not rewrite the trail, and must
+    // never resurrect an entry that truncation has already dropped.
+    if (settled) return;
+    settled = true;
+
     const current = readAll();
-    if (current[index]?.label === label) {
-      current[index].finished = true;
+    const entry = current.find((e) => e.id === id);
+    if (entry && !entry.finished) {
+      entry.finished = true;
       writeAll(current);
     }
   };
 }
 
-/** Runs `fn` inside a breadcrumb, marking it finished only if it returns. */
+/**
+ * Runs `fn` inside a breadcrumb.
+ *
+ * The entry is closed whether `fn` returns or throws, because a thrown error is
+ * proof the process survived — that is an ordinary failure with a message, not
+ * the silent death this trail exists to catch. Leaving it open would report a
+ * handled error as a crash.
+ */
 export async function traced<T>(label: string, fn: () => Promise<T>): Promise<T> {
   const done = mark(label);
-  const result = await fn();
-  done();
-  return result;
+  try {
+    return await fn();
+  } finally {
+    done();
+  }
 }
 
 export interface CrashReport {
@@ -84,6 +160,8 @@ export interface CrashReport {
   lastUnfinished: Breadcrumb;
   /** Steps that completed before it, most recent last. */
   precedingCompleted: string[];
+  /** How far into that step it had got, when the step reports its position. */
+  progress?: string;
 }
 
 /**
@@ -106,6 +184,7 @@ export function findPreviousCrash(): CrashReport | null {
       .slice(Math.max(0, lastUnfinishedIndex - 5), lastUnfinishedIndex)
       .filter((e) => e.finished)
       .map((e) => e.label),
+    progress: readProgress() ?? undefined,
   };
 }
 
@@ -117,6 +196,7 @@ export function clearTrail(): void {
   } catch {
     // Nothing to do.
   }
+  clearProgress();
 }
 
 /** Human-readable summary for the crash notice. */
@@ -126,5 +206,7 @@ export function describeCrash(report: CrashReport): string {
     ? `\n\nSteps that completed first:\n${report.precedingCompleted.map((s) => `• ${s}`).join('\n')}`
     : '';
 
-  return `The app closed unexpectedly during:\n\n${report.lastUnfinished.label}\n\n${when}${preceding}`;
+  const progress = report.progress ? `\n\nReached: ${report.progress}` : '';
+
+  return `The app closed unexpectedly during:\n\n${report.lastUnfinished.label}${progress}\n\n${when}${preceding}`;
 }

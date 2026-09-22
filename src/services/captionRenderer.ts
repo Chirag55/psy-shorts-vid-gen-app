@@ -1,7 +1,7 @@
 import type { SkFont, SkSurface, SkTypeface } from '@shopify/react-native-skia';
 import { ANTON_BYTE_LENGTH, ANTON_REGULAR_BASE64 } from '@/assets/antonFont';
 import { base64ToBytes, guardFontBytes } from '@/core/binaryGuards';
-import { mark } from './breadcrumbs';
+import { mark, noteProgress, clearProgress } from './breadcrumbs';
 
 /**
  * Skia is required lazily for the same reason as FFmpeg: nothing native should
@@ -22,6 +22,7 @@ function skia(): SkiaModule {
 import { Directory, File } from 'expo-file-system';
 import { isBlank, type CaptionFrame } from '@/core/captions';
 import { bucketDir } from './workspace';
+import { makeRasterSurface } from './skiaSurface';
 
 /**
  * Draws caption frames as transparent PNGs for FFmpeg to composite.
@@ -205,10 +206,21 @@ export async function renderCaptionFrames(opts: RenderCaptionsOptions): Promise<
   stroke.setAntiAlias(true);
 
   const entries: Array<{ name: string; duration: number }> = [];
-  let surface: SkSurface | null = null;
   // Silences are all identical, so one encoded transparent frame is reused for
   // every one of them instead of drawing and writing the same empty PNG again.
   let blankName: string | null = null;
+
+  // One surface for the whole sequence, cleared between frames.
+  //
+  // This used to allocate a surface per frame. On Android that meant one GPU
+  // texture created and destroyed per caption — seventy of them for a short —
+  // with destruction deferred into Skia's command stream and racing the UI
+  // thread for the shared EGL context. Losing that race killed the process
+  // outright. A single CPU raster surface has none of that machinery: allocate
+  // once, clear, draw, snapshot, repeat.
+  const surface = makeRasterSurface<SkSurface>(Skia, style.width, style.height);
+  const canvas = surface.getCanvas();
+  const transparent = Skia.Color('#00000000');
 
   try {
     for (let i = 0; i < frames.length; i++) {
@@ -224,11 +236,7 @@ export async function renderCaptionFrames(opts: RenderCaptionsOptions): Promise<
       const name = `cap_${String(i).padStart(5, '0')}.png`;
       if (isBlank(frame)) blankName = name;
 
-      surface = Skia.Surface.MakeOffscreen(style.width, style.height);
-      if (!surface) throw new Error('Skia could not allocate an offscreen surface for captions.');
-
-      const canvas = surface.getCanvas();
-      canvas.clear(Skia.Color('#00000000'));
+      canvas.clear(transparent);
 
       const lines = layout(frame, font, maxTextWidth, spaceWidth, fallbackCharWidth);
       const blockHeight = lines.length * lineHeight;
@@ -247,10 +255,13 @@ export async function renderCaptionFrames(opts: RenderCaptionsOptions): Promise<
         y += lineHeight;
       }
 
-      // Both the snapshot and the surface hold native memory. A short is dozens
-      // of frames and a long-form chapter hundreds; leaving the snapshots to the
-      // garbage collector means the whole sequence is resident at once, which is
-      // enough to have the OS kill the render mid-way.
+      // The snapshot holds native memory and must be released before the next
+      // frame is drawn. Beyond the obvious reason — a long-form chapter is
+      // hundreds of frames, and letting the garbage collector decide when to
+      // free them means the whole sequence is resident at once — Skia's
+      // snapshots are copy-on-write: while an image still references the
+      // surface's pixels, the next `clear` has to duplicate the whole buffer.
+      // Disposing first means the surface is reused in place.
       const image = surface.makeImageSnapshot();
       try {
         const bytes = image.encodeToBytes(ImageFormat.PNG, 100);
@@ -265,16 +276,18 @@ export async function renderCaptionFrames(opts: RenderCaptionsOptions): Promise<
 
       entries.push({ name, duration: Math.max(0.02, frame.end - frame.start) });
 
-      surface.dispose();
-      surface = null;
-
       if (i % 12 === 11) {
         opts.onProgress?.(i + 1, frames.length);
+        // Recorded at the yield point rather than every frame: one small write
+        // per twelve frames is negligible, and it turns "died somewhere in
+        // seventy frames" into "died around frame 48".
+        noteProgress(`caption frame ${i + 1} of ${frames.length} (${style.width}x${style.height})`);
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
     }
   } finally {
-    surface?.dispose();
+    surface.dispose();
+    clearProgress();
   }
 
   // Pad to the full chapter so the overlay never runs out mid-render.

@@ -1,7 +1,9 @@
+import type { SkSurface } from '@shopify/react-native-skia';
 import { File } from 'expo-file-system';
 import { assessTransparency, clearConnectedBackground, type TransparencyReport } from '@/core/floodFill';
 import { guardImageBytes, planDecodeSize } from '@/core/binaryGuards';
 import { bucketFile } from './workspace';
+import { makeRasterSurface } from './skiaSurface';
 import { mark } from './breadcrumbs';
 
 /**
@@ -94,34 +96,43 @@ export async function prepareMascot(sourceUri: string, emotion: string): Promise
     alphaType: AlphaType.Unpremul,
   };
 
-  let working = source;
-  if (plan.wasDownscaled) {
-    const doneScale = mark(`Scaling mascot ${sourceWidth}x${sourceHeight} to ${width}x${height}`);
-    const surface = Skia.Surface.MakeOffscreen(width, height);
-    try {
-      if (!surface) throw new Error('Could not allocate a surface to scale the image.');
-      const canvas = surface.getCanvas();
-      canvas.clear(Skia.Color('#00000000'));
-      canvas.drawImageRect(
-        source,
-        { x: 0, y: 0, width: sourceWidth, height: sourceHeight },
-        { x: 0, y: 0, width, height },
-        Skia.Paint()
-      );
-      working = surface.makeImageSnapshot();
-    } finally {
-      surface?.dispose();
-      doneScale();
-    }
-    source.dispose();
-  }
-
+  // Pixels are read from whichever image ends up at the working size. The
+  // surface below is a CPU raster one for the same reason the caption renderer
+  // uses one: a GPU-backed offscreen surface ties its texture's lifetime to the
+  // EGL context and kills the process if that goes wrong, and this image is
+  // headed straight for `readPixels` anyway.
   const doneRead2 = mark(`Reading mascot pixels (${width}x${height})`);
   let raw;
   try {
-    raw = working.readPixels(0, 0, info);
+    if (plan.wasDownscaled) {
+      const surface = makeRasterSurface<SkSurface>(Skia, width, height);
+      try {
+        const canvas = surface.getCanvas();
+        canvas.clear(Skia.Color('#00000000'));
+        const paint = Skia.Paint();
+        paint.setAntiAlias(true);
+        canvas.drawImageRect(
+          source,
+          { x: 0, y: 0, width: sourceWidth, height: sourceHeight },
+          { x: 0, y: 0, width, height },
+          paint
+        );
+        // Read from the snapshot while the surface is still alive, so there is
+        // never an image outliving the buffer it borrows.
+        const scaled = surface.makeImageSnapshot();
+        try {
+          raw = scaled.readPixels(0, 0, info);
+        } finally {
+          scaled.dispose();
+        }
+      } finally {
+        surface.dispose();
+      }
+    } else {
+      raw = source.readPixels(0, 0, info);
+    }
   } finally {
-    working.dispose();
+    source.dispose();
     doneRead2();
   }
   if (!raw) throw new Error('Could not read the image pixels.');
