@@ -38,6 +38,19 @@ function registerPackage(config) {
       throw new Error('withCrashInfo: could not find the package list in MainApplication.kt');
     }
     contents = contents.replace(anchor, `${anchor}\n          add(CrashInfoPackage())`);
+
+    // Install the uncaught-exception handler at process start. A legacy module
+    // is constructed lazily under the New Architecture, so relying on the
+    // module's own constructor would miss anything that crashes before the app
+    // first asks for crash information.
+    const onCreate = 'loadReactNative(this)';
+    if (contents.includes(onCreate) && !contents.includes('installGlobalHandler')) {
+      contents = contents.replace(
+        onCreate,
+        `CrashInfoModule.installGlobalHandler(this)\n    ${onCreate}`
+      );
+    }
+
     cfg.modResults.contents = contents;
     return cfg;
   });

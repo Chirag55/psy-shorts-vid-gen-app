@@ -28,6 +28,8 @@ export interface ExitRecord {
 
 interface CrashInfoNative extends TurboModule {
   getExitReasons(limit: number): Promise<ExitRecord[]>;
+  getLastJavaCrash(): Promise<string>;
+  clearLastJavaCrash(): Promise<boolean>;
 }
 
 function nativeModule(): CrashInfoNative | null {
@@ -91,4 +93,31 @@ export function describeExit(record: ExitRecord): string {
 /** Whether this build can read exit reasons at all. */
 export function isAvailable(): boolean {
   return nativeModule() !== null;
+}
+
+/**
+ * The stack trace of the last uncaught Java/Kotlin exception.
+ *
+ * Android's exit record names a Java crash but carries no trace for one, so the
+ * app installs its own default uncaught-exception handler and writes the trace
+ * to disk before dying. This reads it back.
+ */
+export async function lastJavaCrash(): Promise<string> {
+  const module = nativeModule();
+  if (!module) return '';
+  try {
+    return (await module.getLastJavaCrash()) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export async function clearJavaCrash(): Promise<void> {
+  const module = nativeModule();
+  if (!module) return;
+  try {
+    await module.clearLastJavaCrash();
+  } catch {
+    // Nothing to do.
+  }
 }

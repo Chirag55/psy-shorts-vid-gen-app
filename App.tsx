@@ -10,6 +10,7 @@ import { useStudio } from '@/store';
 import { workspaceRoot } from '@/services/workspace';
 import { clearTrail } from '@/services/breadcrumbs';
 import { diagnosePreviousRun } from '@/services/diagnostics';
+import { clearJavaCrash } from '@/services/crashInfo';
 import * as Clipboard from 'expo-clipboard';
 
 const theme: Theme = {
@@ -55,7 +56,14 @@ export default function App() {
               void Clipboard.setStringAsync(diagnosis.report);
             },
           },
-          { text: 'Dismiss', style: 'cancel', onPress: () => clearTrail() },
+          {
+            text: 'Dismiss',
+            style: 'cancel',
+            onPress: () => {
+              clearTrail();
+              void clearJavaCrash();
+            },
+          },
         ]);
       } catch {
         // Diagnostics must never block startup.

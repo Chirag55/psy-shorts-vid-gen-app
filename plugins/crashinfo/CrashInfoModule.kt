@@ -4,6 +4,9 @@ import android.app.ActivityManager
 import android.app.ApplicationExitInfo
 import android.content.Context
 import android.os.Build
+import java.io.File
+import java.io.PrintWriter
+import java.io.StringWriter
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -29,6 +32,93 @@ class CrashInfoModule(reactContext: ReactApplicationContext) :
   ReactContextBaseJavaModule(reactContext) {
 
   override fun getName() = "CrashInfo"
+
+  init {
+    installGlobalHandler(reactContext.applicationContext)
+  }
+
+  /**
+   * Captures the stack trace of an uncaught Java/Kotlin exception.
+   *
+   * `ApplicationExitInfo` reports *that* the process died of a Java crash but
+   * carries no trace for one — `traceInputStream` is populated for ANRs and
+   * native tombstones only. Without a trace, a Java crash on a background
+   * thread is as opaque as a segfault: the process is gone and nothing in
+   * JavaScript ran. Writing the trace to a file before letting the app die is
+   * the only way to see it on the next launch.
+   *
+   * The previous handler is always invoked afterwards, so the process still
+   * terminates exactly as Android expects.
+   */
+  /** Returns the last captured Java/Kotlin stack trace, or an empty string. */
+  @ReactMethod
+  fun getLastJavaCrash(promise: Promise) {
+    try {
+      val file = File(File(reactApplicationContext.filesDir, "diagnostics"), JAVA_CRASH_FILE)
+      promise.resolve(if (file.exists()) file.readText() else "")
+    } catch (e: Throwable) {
+      promise.resolve("")
+    }
+  }
+
+  @ReactMethod
+  fun clearLastJavaCrash(promise: Promise) {
+    try {
+      File(File(reactApplicationContext.filesDir, "diagnostics"), JAVA_CRASH_FILE).delete()
+    } catch (ignored: Throwable) {
+      // Nothing to do.
+    }
+    promise.resolve(true)
+  }
+
+  companion object {
+    private const val JAVA_CRASH_FILE = "java-crash.log"
+
+    @Volatile
+    private var handlerInstalled = false
+
+    /**
+     * Installs the handler as early as possible.
+     *
+     * Called from `MainApplication.onCreate` rather than only from this
+     * module's constructor: under the New Architecture a legacy module is
+     * built lazily, on first access, so a crash before anything touched this
+     * module would go uncaptured.
+     */
+    @JvmStatic
+    @Synchronized
+    fun installGlobalHandler(context: Context) {
+      if (handlerInstalled) return
+      handlerInstalled = true
+
+      val previous = Thread.getDefaultUncaughtExceptionHandler()
+      val appContext = context.applicationContext
+
+      Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+        try {
+          val writer = StringWriter()
+          throwable.printStackTrace(PrintWriter(writer))
+
+          val report = buildString {
+            append("thread: ").append(thread.name).append('\n')
+            append("when: ").append(System.currentTimeMillis()).append('\n')
+            append("type: ").append(throwable.javaClass.name).append('\n')
+            append("message: ").append(throwable.message ?: "(none)").append('\n')
+            append('\n')
+            append(writer.toString())
+          }
+
+          val dir = File(appContext.filesDir, "diagnostics")
+          dir.mkdirs()
+          File(dir, JAVA_CRASH_FILE).writeText(report.take(16000))
+        } catch (ignored: Throwable) {
+          // Never let diagnostics interfere with the crash itself.
+        }
+
+        previous?.uncaughtException(thread, throwable)
+      }
+    }
+  }
 
   private fun reasonName(reason: Int): String = when (reason) {
     ApplicationExitInfo.REASON_ANR -> "ANR (the app stopped responding)"

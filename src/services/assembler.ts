@@ -7,7 +7,7 @@ import { captionBandY, captionStyleFor, preloadCaptionFont, renderCaptionFrames 
 import { probeDuration, run, type LogSink } from './ffmpeg';
 import { bucketDir, bucketFile, toFsPath, writeText } from './workspace';
 import { File } from 'expo-file-system';
-import { mark } from './breadcrumbs';
+import { mark, traced } from './breadcrumbs';
 
 const SHORT_W = 1080;
 const SHORT_H = 1920;
@@ -132,8 +132,13 @@ async function prepareCaptions(
   // Also write the .ass sidecar. It is not used by this renderer, but it is
   // exactly what the desktop studio consumes, so a project rendered here can
   // still be finished there.
-  const ass = mode === 'short' ? buildShortFormAss(words) : buildLongFormAss(words);
-  writeText(bucketFile('subs', project.slug, `ch_${key}.ass`), ass);
+  const doneAss = mark(`Writing the .ass sidecar (${mode}, ${words.length} words)`);
+  try {
+    const ass = mode === 'short' ? buildShortFormAss(words) : buildLongFormAss(words);
+    writeText(bucketFile('subs', project.slug, `ch_${key}.ass`), ass);
+  } finally {
+    doneAss();
+  }
 
   const y = captionBandY(mode, H, style.height);
 
@@ -160,14 +165,16 @@ export async function assembleShort(project: Project, opts: AssembleOptions): Pr
   if (!audioUri) throw new Error('Synthesise the voiceover before assembling.');
 
   const words = project.assets.alignment['short'] ?? [];
-  const audioDuration = await probeDuration(audioUri);
+  const audioDuration = await traced('Probing the voiceover duration', () => probeDuration(audioUri));
   if (audioDuration <= 0) throw new Error('Could not read the voiceover duration.');
 
   const clipUris = script.beats.map((_, i) => project.assets.clips[`short_${i}`]).filter(Boolean) as string[];
   if (clipUris.length === 0) throw new Error('Import at least one hero clip before assembling.');
 
   opts.onProgress?.('Probing clips', 1, 5);
-  const clipDurations = await Promise.all(clipUris.map(probeDuration));
+  const clipDurations = await traced(`Probing ${clipUris.length} hero clips`, () =>
+    Promise.all(clipUris.map(probeDuration))
+  );
   const videoTotal = clipDurations.reduce((a, b) => a + b, 0);
 
   const inputs: string[] = [];
@@ -206,6 +213,8 @@ export async function assembleShort(project: Project, opts: AssembleOptions): Pr
   }
 
   opts.onProgress?.('Compositing mascot', 3, 5);
+  const doneMascot = mark('Building the mascot overlay filters');
+  try {
   if (opts.includeMascot && opts.mascotAssets && words.length) {
     const spans = beatWindows(words, script.beats.map((b) => b.text));
     const windows = shortFormMascotWindows(
@@ -229,9 +238,18 @@ export async function assembleShort(project: Project, opts: AssembleOptions): Pr
       stage = out;
     }
   }
+  } finally {
+    doneMascot();
+  }
 
-  const outFile = bucketFile('final', slug, `${slug}-short.mp4`);
-  if (outFile.exists) outFile.delete();
+  const donePrep = mark('Preparing the output file');
+  let outFile;
+  try {
+    outFile = bucketFile('final', slug, `${slug}-short.mp4`);
+    if (outFile.exists) outFile.delete();
+  } finally {
+    donePrep();
+  }
 
   opts.onProgress?.('Encoding', 4, 5);
   const doneEncode = mark(`Encoding short (${W}x${H}, ${inputs.length / 2} inputs)`);

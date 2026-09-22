@@ -7,7 +7,7 @@ import {
   readTrail,
   type CrashReport,
 } from './breadcrumbs';
-import { describeExit, lastAbnormalExit, isAvailable, type ExitRecord } from './crashInfo';
+import { describeExit, lastAbnormalExit, lastJavaCrash, isAvailable, type ExitRecord } from './crashInfo';
 
 /**
  * Assembles everything known about a previous crash into one report.
@@ -38,9 +38,10 @@ export function buildVersion(): string {
 export async function diagnosePreviousRun(): Promise<Diagnosis | null> {
   const crash = safely(() => findPreviousCrash(), null);
   const exit = await lastAbnormalExit();
+  const javaTrace = await lastJavaCrash();
 
-  // Nothing to say: no unfinished step and no abnormal exit recorded.
-  if (!crash && !exit) return null;
+  // Nothing to say: no unfinished step, no abnormal exit, no captured trace.
+  if (!crash && !exit && !javaTrace) return null;
 
   const version = buildVersion();
   const trail = safely(() => formatTrail(readTrail()), '(trail unavailable)');
@@ -57,13 +58,31 @@ export async function diagnosePreviousRun(): Promise<Diagnosis | null> {
     parts.push(describeCrash(crash), '');
   }
 
+  // The most useful thing in the whole report when it is present: the exact
+  // line that threw.
+  if (javaTrace) {
+    parts.push('Captured Java/Kotlin stack trace:', javaTrace, '');
+  }
+
   parts.push('Full step trail:', trail);
+
+  // The first line of a Java trace names the exception; that is the single most
+  // useful thing to show without making the dialog unreadable.
+  const traceHead = javaTrace
+    ? javaTrace
+        .split('\n')
+        .filter((line) => line.startsWith('type:') || line.startsWith('message:') || line.trim().startsWith('at '))
+        .slice(0, 6)
+        .join('\n')
+    : '';
 
   const summary = [
     `Version ${version}`,
     '',
-    crash ? describeCrash(crash) : 'The app did not finish a step it had started.',
+    crash ? describeCrash(crash) : 'The app was not inside a recorded step.',
     exit ? `\n${exit.reason}` : '',
+    traceHead ? `\n${traceHead}` : '',
+    '\nTap "Copy details" for the full report.',
   ]
     .filter(Boolean)
     .join('\n');
