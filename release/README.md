@@ -1,6 +1,6 @@
 # Installable build
 
-`mindfiles-studio-v1.4.0-arm64.apk` — signed, ready to sideload.
+`mindfiles-studio-v1.5.0-arm64.apk` — signed, ready to sideload.
 
 ## Install it
 
@@ -15,6 +15,23 @@ Verify the download if you want to:
 ```bash
 sha256sum -c SHA256SUMS
 ```
+
+## What changed in 1.5.0
+
+- **No more owl in the Flow clips.** The brand bible described the mascot to the
+  script writer without telling it not to stage him, so he ended up in the Veo
+  prompts and the renderer composited a second one on top. Now banned in the
+  prompt rules and stripped from generated prompts after the fact.
+- **Native memory released during assembly.** Every caption frame allocated a
+  native image snapshot that was never disposed — dozens per short, hundreds per
+  long-form chapter — which is a plausible cause of the assembly crash. Also
+  fixed in mascot preparation.
+- **Reuse is now visible.** Assembly lists the clips, voiced tracks and stills it
+  is about to reuse, and the re-synthesise prompt no longer claims characters
+  will be spent when identical text is free.
+
+**Scripts generated before this build still have the owl in their stored
+prompts** — regenerate those. Clips already imported are fine.
 
 ## What changed in 1.4.0
 
@@ -95,7 +112,7 @@ package name.
 
 | | |
 | :--- | :--- |
-| Version | 1.4.0 (versionCode 1) |
+| Version | 1.5.0 (versionCode 1) |
 | Package | `com.mindfiles.studio` |
 | Architecture | `arm64-v8a` only — see below |
 | Min Android | 7.0 (API 24) |
