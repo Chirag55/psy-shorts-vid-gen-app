@@ -8,7 +8,9 @@ import Navigation from '@/navigation';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useStudio } from '@/store';
 import { workspaceRoot } from '@/services/workspace';
-import { clearTrail, describeCrash, findPreviousCrash } from '@/services/breadcrumbs';
+import { clearTrail } from '@/services/breadcrumbs';
+import { diagnosePreviousRun } from '@/services/diagnostics';
+import * as Clipboard from 'expo-clipboard';
 
 const theme: Theme = {
   ...DarkTheme,
@@ -35,18 +37,30 @@ export default function App() {
     }
 
     // A native crash kills the process outright, so nothing in memory survives
-    // to report it. The breadcrumb trail is written to disk before each risky
-    // step; an unfinished tail on startup is where the app died last time.
-    try {
-      const crash = findPreviousCrash();
-      if (crash) {
-        Alert.alert('Last session ended unexpectedly', describeCrash(crash), [
-          { text: 'Dismiss', onPress: () => clearTrail() },
+    // to report it. Three things are reconstructed on the next launch: the
+    // breadcrumb trail (what the app was doing), Android's own exit record (how
+    // the process actually ended — a segfault and a low-memory kill are
+    // indistinguishable from inside the app and need opposite fixes), and the
+    // build version, so there is never again any doubt about which build was
+    // running when it happened.
+    void (async () => {
+      try {
+        const diagnosis = await diagnosePreviousRun();
+        if (!diagnosis) return;
+
+        Alert.alert('Last session ended unexpectedly', diagnosis.summary, [
+          {
+            text: 'Copy details',
+            onPress: () => {
+              void Clipboard.setStringAsync(diagnosis.report);
+            },
+          },
+          { text: 'Dismiss', style: 'cancel', onPress: () => clearTrail() },
         ]);
+      } catch {
+        // Diagnostics must never block startup.
       }
-    } catch {
-      // Diagnostics must never block startup.
-    }
+    })();
   }, []);
 
   return (

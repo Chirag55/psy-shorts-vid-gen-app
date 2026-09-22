@@ -154,9 +154,17 @@ function layout(
 
   for (const token of frame.tokens) {
     // A face missing a glyph can measure zero; approximate rather than stack
-    // every token at the same x.
-    const measured = font.measureText(token.text).width;
-    const width = measured > 0 ? measured : token.text.length * fallbackCharWidth;
+    // every token at the same x. A non-finite measurement is treated the same
+    // way: NaN would propagate into the draw coordinates below, and Skia given
+    // NaN coordinates is undefined behaviour rather than a no-op.
+    let measured = 0;
+    try {
+      measured = font.measureText(token.text).width;
+    } catch {
+      measured = 0;
+    }
+    const width =
+      Number.isFinite(measured) && measured > 0 ? measured : token.text.length * fallbackCharWidth;
     const projected = current.tokens.length ? current.width + spaceWidth + width : width;
 
     if (current.tokens.length && projected > maxWidth) {
@@ -209,6 +217,8 @@ export async function renderCaptionFrames(opts: RenderCaptionsOptions): Promise<
   // Silences are all identical, so one encoded transparent frame is reused for
   // every one of them instead of drawing and writing the same empty PNG again.
   let blankName: string | null = null;
+  /** Rendered frames by content, so an identical caption is drawn only once. */
+  const drawn = new Map<string, string>();
 
   // One surface for the whole sequence, cleared between frames.
   //
@@ -233,6 +243,18 @@ export async function renderCaptionFrames(opts: RenderCaptionsOptions): Promise<
         continue;
       }
 
+      // Single-word captions repeat constantly — "a", "you", "the" — and a
+      // repeated word is the same picture. Drawing it once and pointing the
+      // concat list at the existing file cuts the number of native draw and
+      // encode calls roughly in half on a typical short, which is both faster
+      // and less exposure to the layer that has been crashing.
+      const signature = frame.tokens.map((t) => `${t.active ? '*' : ''}${t.text}`).join(' ');
+      const seen = drawn.get(signature);
+      if (seen) {
+        entries.push({ name: seen, duration: Math.max(0.02, frame.end - frame.start) });
+        continue;
+      }
+
       const name = `cap_${String(i).padStart(5, '0')}.png`;
       if (isBlank(frame)) blankName = name;
 
@@ -240,17 +262,17 @@ export async function renderCaptionFrames(opts: RenderCaptionsOptions): Promise<
 
       const lines = layout(frame, font, maxTextWidth, spaceWidth, fallbackCharWidth);
       const blockHeight = lines.length * lineHeight;
-      let y = (style.height - blockHeight) / 2 + style.fontSize;
+      let y = Math.round((style.height - blockHeight) / 2 + style.fontSize);
 
       for (const line of lines) {
-        let x = (style.width - line.width) / 2;
+        let x = Math.round((style.width - line.width) / 2);
         for (const token of line.tokens) {
           // Outline first, fill second — drawing the stroke over the fill would
           // eat into the glyph and thin the text.
           canvas.drawText(token.text, x, y, stroke, font);
           fill.setColor(Skia.Color(token.active ? NEON_YELLOW : WHITE));
           canvas.drawText(token.text, x, y, fill, font);
-          x += token.width + spaceWidth;
+          x = Math.round(x + token.width + spaceWidth);
         }
         y += lineHeight;
       }
@@ -274,14 +296,18 @@ export async function renderCaptionFrames(opts: RenderCaptionsOptions): Promise<
         image.dispose();
       }
 
+      drawn.set(signature, name);
       entries.push({ name, duration: Math.max(0.02, frame.end - frame.start) });
+
+      // Written every frame, to one small file that is overwritten in place. If
+      // the process dies, the next launch names the exact frame rather than the
+      // whole step.
+      noteProgress(
+        `caption frame ${i + 1} of ${frames.length} (${style.width}x${style.height}) "${signature.slice(0, 40)}"`
+      );
 
       if (i % 12 === 11) {
         opts.onProgress?.(i + 1, frames.length);
-        // Recorded at the yield point rather than every frame: one small write
-        // per twelve frames is negligible, and it turns "died somewhere in
-        // seventy frames" into "died around frame 48".
-        noteProgress(`caption frame ${i + 1} of ${frames.length} (${style.width}x${style.height})`);
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
     }

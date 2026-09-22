@@ -2,7 +2,7 @@
   "expo": {
     "name": "The Mind Files Studio",
     "slug": "mindfiles-studio-mobile",
-    "version": "1.7.0",
+    "version": "1.8.0",
     "orientation": "portrait",
     "scheme": "mindfiles",
     "userInterfaceStyle": "dark",
@@ -12,7 +12,7 @@
     ],
     "android": {
       "package": "com.mindfiles.studio",
-      "versionCode": 7,
+      "versionCode": 8,
       "permissions": [
         "android.permission.INTERNET"
       ],
@@ -59,7 +59,8 @@
         }
       ],
       "./plugins/withFFmpegKit.js",
-      "./plugins/withPrivacyHardening.js"
+      "./plugins/withPrivacyHardening.js",
+      "./plugins/withCrashInfo.js"
     ],
     "extra": {
       "eas": {

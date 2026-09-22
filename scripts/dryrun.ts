@@ -99,6 +99,13 @@ async function main() {
     else pass(`frames carry real pixel data (smallest ${smallest}B)`);
 
     const list = fs.readFileSync(nodePath.join(dir, 'frames.txt'), 'utf8');
+
+    // Every file the concat list names must exist. Reusing a frame for a
+    // repeated word is only safe if the reference still resolves.
+    const referenced = Array.from(list.matchAll(/^file '([^']+)'$/gm)).map((m) => m[1]);
+    const missing = referenced.filter((f) => !fs.existsSync(nodePath.join(dir, f)));
+    if (missing.length) fail(`concat list references missing files: ${missing.slice(0, 3).join(', ')}`);
+    else pass(`all ${new Set(referenced).size} referenced files exist (${pngs.length} drawn for ${result.frameCount} entries)`);
     const declared = (list.match(/^file /gm) ?? []).length;
     if (declared !== result.frameCount + 1) {
       fail(`concat list has ${declared} entries for ${result.frameCount} frames`);

@@ -52,12 +52,18 @@ function trailFile(): File {
  * own small file that is simply overwritten. Cheap enough for the inner loop,
  * and it narrows a crash from a step to an iteration.
  */
+let progressFile: File | null = null;
+
 export function noteProgress(detail: string): void {
   try {
-    const file = new File(diagnosticsDir(), PROGRESS_FILE);
-    if (file.exists) file.delete();
-    file.create({ intermediates: true, overwrite: true });
-    file.write(detail);
+    // The handle is cached and the file overwritten in place. This is called
+    // once per caption frame, so the directory checks and the delete/create
+    // cycle a fresh handle would do are worth avoiding.
+    if (!progressFile) {
+      progressFile = new File(diagnosticsDir(), PROGRESS_FILE);
+      progressFile.create({ intermediates: true, overwrite: true });
+    }
+    progressFile.write(detail);
   } catch {
     // Diagnostics must never be the reason something fails.
   }
@@ -76,6 +82,7 @@ function readProgress(): string | null {
 
 export function clearProgress(): void {
   try {
+    progressFile = null;
     const file = new File(diagnosticsDir(), PROGRESS_FILE);
     if (file.exists) file.delete();
   } catch {
@@ -186,6 +193,28 @@ export function findPreviousCrash(): CrashReport | null {
       .map((e) => e.label),
     progress: readProgress() ?? undefined,
   };
+}
+
+/**
+ * The whole trail, oldest first.
+ *
+ * `describeCrash` deliberately summarises, but a summary that filters to
+ * completed steps hides the unfinished ones — which are the only interesting
+ * entries when diagnosing a death. This is what gets copied to the clipboard.
+ */
+export function readTrail(): Breadcrumb[] {
+  return readAll();
+}
+
+/** Renders the full trail as text, marking where each step got to. */
+export function formatTrail(entries: Breadcrumb[]): string {
+  if (!entries.length) return '(no steps recorded)';
+  return entries
+    .map((e) => {
+      const time = new Date(e.at).toLocaleTimeString();
+      return `${e.finished ? 'ok  ' : 'DIED'} ${time}  ${e.label}`;
+    })
+    .join('\n');
 }
 
 /** Clears the trail once a crash has been reported, so it is not shown twice. */
