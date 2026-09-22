@@ -7,6 +7,7 @@ import { captionBandY, captionStyleFor, preloadCaptionFont, renderCaptionFrames 
 import { probeDuration, run, type LogSink } from './ffmpeg';
 import { bucketDir, bucketFile, toFsPath, writeText } from './workspace';
 import { File } from 'expo-file-system';
+import { mark } from './breadcrumbs';
 
 const SHORT_W = 1080;
 const SHORT_H = 1920;
@@ -109,16 +110,23 @@ async function prepareCaptions(
   // Bundled typeface must be resolved before the first frame is drawn.
   await preloadCaptionFont();
 
+
   const style = captionStyleFor(mode, W, H);
-  const rendered = await renderCaptionFrames({
-    frames,
-    slug: project.slug,
-    key,
-    style,
-    totalDuration: duration,
-    signal: opts.signal,
-    onProgress: (done, total) => opts.onProgress?.(`Drawing captions ${done}/${total}`, done, total),
-  });
+  const doneCaptions = mark(`Drawing ${frames.length} caption frames (${mode}, ${style.width}x${style.height})`);
+  let rendered;
+  try {
+    rendered = await renderCaptionFrames({
+      frames,
+      slug: project.slug,
+      key,
+      style,
+      totalDuration: duration,
+      signal: opts.signal,
+      onProgress: (done, total) => opts.onProgress?.(`Drawing captions ${done}/${total}`, done, total),
+    });
+  } finally {
+    doneCaptions();
+  }
   if (!rendered) return null;
 
   // Also write the .ass sidecar. It is not used by this renderer, but it is
@@ -226,25 +234,30 @@ export async function assembleShort(project: Project, opts: AssembleOptions): Pr
   if (outFile.exists) outFile.delete();
 
   opts.onProgress?.('Encoding', 4, 5);
-  await run(
-    [
-      '-y',
-      ...inputs,
-      '-filter_complex', filters.join(';'),
-      '-map', `[${stage}]`,
-      '-map', `${audioIndex}:a`,
-      '-t', audioDuration.toFixed(3),
-      '-c:v', 'libx264',
-      '-preset', opts.draft ? 'veryfast' : 'medium',
-      '-crf', opts.draft ? '28' : '20',
-      '-pix_fmt', 'yuv420p',
-      '-c:a', 'aac',
-      '-b:a', '192k',
-      '-movflags', '+faststart',
-      toFsPath(outFile.uri),
-    ],
-    { onLog: opts.onLog, signal: opts.signal }
-  );
+  const doneEncode = mark(`Encoding short (${W}x${H}, ${inputs.length / 2} inputs)`);
+  try {
+    await run(
+      [
+        '-y',
+        ...inputs,
+        '-filter_complex', filters.join(';'),
+        '-map', `[${stage}]`,
+        '-map', `${audioIndex}:a`,
+        '-t', audioDuration.toFixed(3),
+        '-c:v', 'libx264',
+        '-preset', opts.draft ? 'veryfast' : 'medium',
+        '-crf', opts.draft ? '28' : '20',
+        '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac',
+        '-b:a', '192k',
+        '-movflags', '+faststart',
+        toFsPath(outFile.uri),
+      ],
+      { onLog: opts.onLog, signal: opts.signal }
+    );
+  } finally {
+    doneEncode();
+  }
 
   opts.onProgress?.('Done', 5, 5);
   return outFile.uri;

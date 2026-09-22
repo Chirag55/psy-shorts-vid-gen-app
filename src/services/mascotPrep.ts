@@ -1,15 +1,22 @@
 import { File } from 'expo-file-system';
 import { assessTransparency, clearConnectedBackground, type TransparencyReport } from '@/core/floodFill';
+import { guardImageBytes, planDecodeSize } from '@/core/binaryGuards';
 import { bucketFile } from './workspace';
+import { mark } from './breadcrumbs';
 
 /**
  * Prepares a mascot image for overlay by removing its background once, at
  * import time.
  *
- * Doing it here rather than during the render is deliberate: it happens once
- * instead of on every chapter of every render, the result can be inspected
- * before it reaches a video, and a bad import can be reported while the user is
- * still looking at the screen that caused it.
+ * Doing it here rather than during the render means it happens once instead of
+ * on every chapter, the result can be checked before it reaches a video, and a
+ * bad import is reported while the user is still on the screen that caused it.
+ *
+ * Every step that hands data to native code is guarded. Skia's loaders return
+ * empty data instead of throwing when they cannot read a source, and the next
+ * call passes that to an image decoder, which segfaults — taking the process
+ * down with no JavaScript error to show. Bytes are therefore read and checked
+ * in JavaScript first.
  */
 
 type SkiaModule = typeof import('@shopify/react-native-skia');
@@ -27,33 +34,58 @@ function skia(): SkiaModule {
 export interface PreparedMascot {
   uri: string;
   report: TransparencyReport;
+  /** Set when the source was larger than is sensible and was scaled down. */
+  downscaledTo?: { width: number; height: number };
 }
 
 /**
- * Reads the source image, clears background connected to its border, and writes
- * a transparent PNG into the workspace.
+ * Reads the bytes of a picked image.
+ *
+ * The picker can hand back a URI that Skia's own loader cannot resolve, so the
+ * file is read here and the bytes are passed directly. That also makes the
+ * header check possible.
  */
+async function readImageBytes(sourceUri: string): Promise<Uint8Array> {
+  const file = new File(sourceUri);
+  if (!file.exists) {
+    throw new Error('That image could not be found. Try picking it again.');
+  }
+  return file.bytes();
+}
+
 export async function prepareMascot(sourceUri: string, emotion: string): Promise<PreparedMascot> {
+  const doneRead = mark(`Reading mascot image (${emotion})`);
+  let bytes: Uint8Array;
+  try {
+    bytes = await readImageBytes(sourceUri);
+  } finally {
+    doneRead();
+  }
+
+  const guard = guardImageBytes(bytes);
+  if (!guard.ok) throw new Error(guard.reason ?? 'That file is not a readable image.');
+
   const { Skia, AlphaType, ColorType, ImageFormat } = skia();
 
-  const data = await Skia.Data.fromURI(sourceUri);
-  const source = Skia.Image.MakeImageFromEncoded(data);
-  if (!source) throw new Error('That image could not be decoded. Try a PNG or JPG.');
-
-  const width = source.width();
-  const height = source.height();
-
-  // A mascot overlay is never displayed above a few hundred pixels wide, so a
-  // multi-megapixel source buys nothing and costs a pixel buffer of
-  // width*height*4 bytes plus a flood-fill stack over every pixel.
-  const MAX_PIXELS = 4_000_000;
-  if (width * height > MAX_PIXELS) {
-    source.dispose();
-    data.dispose();
-    throw new Error(
-      `That image is ${width}x${height}, which is larger than this needs. Scale it to roughly 600px wide and import it again.`
-    );
+  const doneDecode = mark(`Decoding mascot image (${emotion}, ${bytes.length} bytes)`);
+  let source;
+  try {
+    source = Skia.Image.MakeImageFromEncoded(Skia.Data.fromBytes(bytes));
+  } finally {
+    doneDecode();
   }
+  if (!source) throw new Error('That image could not be decoded. Export it as a PNG and try again.');
+
+  const sourceWidth = source.width();
+  const sourceHeight = source.height();
+
+  // A huge source is scaled down rather than refused: readPixels materialises
+  // width*height*4 bytes in JavaScript and the flood fill allocates two more
+  // arrays over the same pixel count, so a phone photo would be hundreds of
+  // megabytes before anything is drawn.
+  const plan = planDecodeSize(sourceWidth, sourceHeight);
+  const width = plan.targetWidth;
+  const height = plan.targetHeight;
 
   const info = {
     width,
@@ -62,30 +94,72 @@ export async function prepareMascot(sourceUri: string, emotion: string): Promise
     alphaType: AlphaType.Unpremul,
   };
 
-  const raw = source.readPixels(0, 0, info);
-  source.dispose();
-  data.dispose();
+  let working = source;
+  if (plan.wasDownscaled) {
+    const doneScale = mark(`Scaling mascot ${sourceWidth}x${sourceHeight} to ${width}x${height}`);
+    const surface = Skia.Surface.MakeOffscreen(width, height);
+    try {
+      if (!surface) throw new Error('Could not allocate a surface to scale the image.');
+      const canvas = surface.getCanvas();
+      canvas.clear(Skia.Color('#00000000'));
+      canvas.drawImageRect(
+        source,
+        { x: 0, y: 0, width: sourceWidth, height: sourceHeight },
+        { x: 0, y: 0, width, height },
+        Skia.Paint()
+      );
+      working = surface.makeImageSnapshot();
+    } finally {
+      surface?.dispose();
+      doneScale();
+    }
+    source.dispose();
+  }
+
+  const doneRead2 = mark(`Reading mascot pixels (${width}x${height})`);
+  let raw;
+  try {
+    raw = working.readPixels(0, 0, info);
+  } finally {
+    working.dispose();
+    doneRead2();
+  }
   if (!raw) throw new Error('Could not read the image pixels.');
 
   const pixels = raw instanceof Uint8Array ? raw : new Uint8Array(raw.buffer);
-  const cleared = clearConnectedBackground(pixels, width, height);
+
+  const doneFill = mark(`Removing mascot background (${width}x${height})`);
+  let cleared: number;
+  try {
+    cleared = clearConnectedBackground(pixels, width, height);
+  } finally {
+    doneFill();
+  }
   const report = assessTransparency(cleared, width * height);
 
-  const output = Skia.Image.MakeImage(info, Skia.Data.fromBytes(pixels), width * 4);
-  if (!output) throw new Error('Could not rebuild the image after removing its background.');
-
-  let bytes: Uint8Array | null;
+  const doneEncode = mark('Encoding transparent mascot PNG');
+  let encoded: Uint8Array | null;
   try {
-    bytes = output.encodeToBytes(ImageFormat.PNG, 100);
+    const output = Skia.Image.MakeImage(info, Skia.Data.fromBytes(pixels), width * 4);
+    if (!output) throw new Error('Could not rebuild the image after removing its background.');
+    try {
+      encoded = output.encodeToBytes(ImageFormat.PNG, 100);
+    } finally {
+      output.dispose();
+    }
   } finally {
-    output.dispose();
+    doneEncode();
   }
-  if (!bytes) throw new Error('Could not encode the transparent PNG.');
+  if (!encoded) throw new Error('Could not encode the transparent PNG.');
 
   const target: File = bucketFile('stills', '_mascot', `${emotion}.png`);
   if (target.exists) target.delete();
   target.create({ intermediates: true, overwrite: true });
-  target.write(bytes);
+  target.write(encoded);
 
-  return { uri: target.uri, report };
+  return {
+    uri: target.uri,
+    report,
+    downscaledTo: plan.wasDownscaled ? { width, height } : undefined,
+  };
 }

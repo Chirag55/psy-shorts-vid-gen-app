@@ -1,5 +1,7 @@
-import { Asset } from 'expo-asset';
 import type { SkFont, SkSurface, SkTypeface } from '@shopify/react-native-skia';
+import { ANTON_BYTE_LENGTH, ANTON_REGULAR_BASE64 } from '@/assets/antonFont';
+import { base64ToBytes, guardFontBytes } from '@/core/binaryGuards';
+import { mark } from './breadcrumbs';
 
 /**
  * Skia is required lazily for the same reason as FFmpeg: nothing native should
@@ -79,18 +81,32 @@ let typefaceLoadFailed = false;
 export async function preloadCaptionFont(): Promise<void> {
   if (cachedTypeface || typefaceLoadFailed) return;
 
+  const done = mark('Loading the caption font (Anton)');
   try {
-    const asset = Asset.fromModule(require('../../assets/fonts/Anton-Regular.ttf'));
-    await asset.downloadAsync();
-    const uri = asset.localUri ?? asset.uri;
-
     const { Skia } = skia();
-    const data = await Skia.Data.fromURI(uri);
-    cachedTypeface = Skia.Typeface.MakeFreeTypeFaceFromData(data);
+
+    // Decoded in JavaScript rather than fetched from a URI, and checked before
+    // Skia sees it. Skia's URI loader cannot read an Android resource path and
+    // signals that by returning empty data rather than throwing — which
+    // FreeType then turns into a segfault with no JavaScript error.
+    const bytes = base64ToBytes(ANTON_REGULAR_BASE64);
+
+    const guard = guardFontBytes(bytes, ANTON_BYTE_LENGTH);
+    if (!guard.ok) {
+      typefaceLoadFailed = true;
+      // eslint-disable-next-line no-console
+      console.warn(`Caption font rejected before reaching FreeType: ${guard.reason}`);
+      return;
+    }
+
+    cachedTypeface = Skia.Typeface.MakeFreeTypeFaceFromData(Skia.Data.fromBytes(bytes));
     if (!cachedTypeface) typefaceLoadFailed = true;
-  } catch {
-    // Fall back to a system face rather than failing the whole render.
+  } catch (error) {
     typefaceLoadFailed = true;
+    // eslint-disable-next-line no-console
+    console.warn('Caption font failed to load; falling back to a system face.', error);
+  } finally {
+    done();
   }
 }
 

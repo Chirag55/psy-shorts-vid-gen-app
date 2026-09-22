@@ -282,11 +282,15 @@ export default function SettingsScreen() {
       updateSettings({ mascotAssets: { ...settings.mascotAssets, [emotion]: prepared.uri } });
 
       const pct = Math.round(prepared.report.clearedFraction * 100);
+      const scaled = prepared.downscaledTo
+        ? `\n\nScaled down to ${prepared.downscaledTo.width}x${prepared.downscaledTo.height}, which is ample for an overlay.`
+        : '';
+
       Alert.alert(
         prepared.report.warning ? 'Imported, but check it' : 'Imported',
-        prepared.report.warning
+        (prepared.report.warning
           ? `${prepared.report.warning}\n\n${pct}% of the image was made transparent.`
-          : `Background removed — ${pct}% of the image is now transparent. Enclosed white, such as the eyes, is preserved.`
+          : `Background removed — ${pct}% of the image is now transparent. Enclosed white, such as the eyes, is preserved.`) + scaled
       );
     } catch (e) {
       Alert.alert('Import failed', e instanceof Error ? e.message : String(e));
