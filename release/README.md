@@ -1,6 +1,6 @@
 # Installable build
 
-`mindfiles-studio-v1.5.0-arm64.apk` — signed, ready to sideload.
+`mindfiles-studio-v1.6.0-arm64.apk` — signed, ready to sideload.
 
 ## Install it
 
@@ -15,6 +15,26 @@ Verify the download if you want to:
 ```bash
 sha256sum -c SHA256SUMS
 ```
+
+## What changed in 1.6.0 — the native crash
+
+Mascot import and assemble both died hard, with no error popup. They shared one
+call: `Skia.Data.fromURI`, whose result went straight into a native decoder.
+Skia's URI loader does not throw when it cannot read a source — it returns empty
+data, and FreeType or the image decoder then segfaults, killing the process
+before any error handler can run.
+
+For the font this was structural in release builds: a bundled asset is packed
+into the APK as an Android resource, which that loader cannot read. It worked in
+development and broke once packaged.
+
+- **`fromURI` is gone.** The font is embedded in the JS bundle as base64 and
+  decoded in JavaScript; mascot images are read as bytes through the filesystem.
+- **Buffers are validated against magic numbers before any native call**, so a
+  bad source gives a readable message instead of killing the app.
+- **Oversized mascot images are scaled down** rather than refused.
+- **Breadcrumbs.** Risky steps are written to disk before they run. If the app
+  ever dies hard again, the next launch names the exact step it died in.
 
 ## What changed in 1.5.0
 
@@ -112,7 +132,7 @@ package name.
 
 | | |
 | :--- | :--- |
-| Version | 1.5.0 (versionCode 1) |
+| Version | 1.6.0 (versionCode 1) |
 | Package | `com.mindfiles.studio` |
 | Architecture | `arm64-v8a` only — see below |
 | Min Android | 7.0 (API 24) |
