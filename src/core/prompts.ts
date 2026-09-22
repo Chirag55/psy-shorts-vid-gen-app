@@ -13,6 +13,9 @@ No medical disclaimers unless the topic is a diagnosable pathology.
 
 MASCOT: Professor Hoot — a distinguished owl in an academic tweed waistcoat and round
 spectacles. He reacts to revelations; he never narrates.
+He is composited onto the finished video afterwards, as a separate overlay. He must
+therefore NEVER appear in any prompt you write, and never be referred to in the
+narration. Writing him into a clip prompt produces a second owl in the final video.
 
 CADENCE LAW: All spoken copy is bound to ${WORDS_PER_SECOND} words per second. Word counts are
 not stylistic suggestions — they are timing constraints. Exceeding them breaks the render.
@@ -40,6 +43,10 @@ CHARACTER RULES:
 - Never reuse the same character archetype twice inside one video.
 
 VISUAL PROMPT RULES:
+- NO OWL, NO MASCOT, NO BIRD of any kind in any prompt. Professor Hoot is added later as
+  an overlay; a prompt that mentions him, or any owl, bird, or cartoon animal observer,
+  puts a duplicate into the footage. This applies even though he is described above — that
+  description exists so you know the channel, not so you can stage him.
 - Every Veo and Imagen prompt you write describes a SILENT scene: no dialogue, no captions,
   no on-screen text, no logos.
 - Every visual prompt must end with exactly this string:

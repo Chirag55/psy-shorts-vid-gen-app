@@ -231,13 +231,21 @@ export async function renderCaptionFrames(opts: RenderCaptionsOptions): Promise<
         y += lineHeight;
       }
 
+      // Both the snapshot and the surface hold native memory. A short is dozens
+      // of frames and a long-form chapter hundreds; leaving the snapshots to the
+      // garbage collector means the whole sequence is resident at once, which is
+      // enough to have the OS kill the render mid-way.
       const image = surface.makeImageSnapshot();
-      const bytes = image.encodeToBytes(ImageFormat.PNG, 100);
-      if (!bytes) throw new Error('Skia could not encode a caption frame.');
+      try {
+        const bytes = image.encodeToBytes(ImageFormat.PNG, 100);
+        if (!bytes) throw new Error('Skia could not encode a caption frame.');
 
-      const file = new File(dir, name);
-      file.create({ overwrite: true });
-      file.write(bytes);
+        const file = new File(dir, name);
+        file.create({ overwrite: true });
+        file.write(bytes);
+      } finally {
+        image.dispose();
+      }
 
       entries.push({ name, duration: Math.max(0.02, frame.end - frame.start) });
 

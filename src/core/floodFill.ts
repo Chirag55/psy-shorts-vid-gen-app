@@ -46,13 +46,16 @@ export function clearConnectedBackground(
 
   const visited = new Uint8Array(total);
   // An explicit stack rather than recursion: a 1024x1024 image would blow the
-  // call stack long before it finished.
-  const stack: number[] = [];
+  // call stack long before it finished. It is a typed array rather than a
+  // number[] because a JS array boxes every entry, and this can hold one index
+  // per pixel — the difference is tens of megabytes on a large image.
+  const stack = new Int32Array(total);
+  let stackSize = 0;
 
   const push = (index: number) => {
     if (visited[index]) return;
     visited[index] = 1;
-    if (isBackground(index)) stack.push(index);
+    if (isBackground(index)) stack[stackSize++] = index;
   };
 
   // Seed from every border pixel.
@@ -67,8 +70,8 @@ export function clearConnectedBackground(
 
   let cleared = 0;
 
-  while (stack.length) {
-    const index = stack.pop() as number;
+  while (stackSize > 0) {
+    const index = stack[--stackSize];
     pixels[index * 4 + 3] = 0;
     cleared++;
 

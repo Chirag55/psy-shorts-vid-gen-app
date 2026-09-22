@@ -76,10 +76,14 @@ export default function VoiceScreen() {
     if (busyRef.current) return;
 
     if (project.assets.audio[track.key] && !force) {
-      Alert.alert('Already voiced', 'Re-synthesising spends characters again.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Re-synthesise', style: 'destructive', onPress: () => void synthesise(track, true) },
-      ]);
+      Alert.alert(
+        'Already voiced',
+        'This track is done. Re-synthesising only costs characters if the text or voice has changed — identical text is served from the on-device cache for free.',
+        [
+          { text: 'Keep it', style: 'cancel' },
+          { text: 'Re-synthesise', onPress: () => void synthesise(track, true) },
+        ]
+      );
       return;
     }
 

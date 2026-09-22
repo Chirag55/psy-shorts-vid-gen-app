@@ -152,6 +152,26 @@ export default function AssemblyScreen() {
       </Card>
 
       <Card>
+        <H3>Reused, not regenerated</H3>
+        <Small>
+          Assembling never re-imports clips or re-bills voice. It uses what is already on the
+          device; anything missing is simply skipped.
+        </Small>
+        <Row style={{ justifyContent: 'space-between', marginTop: space.xs }}>
+          <Small>Imported clips</Small>
+          <Small style={{ color: colors.text }}>{Object.keys(project.assets.clips).length}</Small>
+        </Row>
+        <Row style={{ justifyContent: 'space-between' }}>
+          <Small>Voiced tracks</Small>
+          <Small style={{ color: colors.text }}>{Object.keys(project.assets.audio).length}</Small>
+        </Row>
+        <Row style={{ justifyContent: 'space-between' }}>
+          <Small>Generated stills</Small>
+          <Small style={{ color: colors.text }}>{Object.keys(project.assets.stills).length}</Small>
+        </Row>
+      </Card>
+
+      <Card>
         <Row style={{ justifyContent: 'space-between' }}>
           <H3>Render</H3>
           <Badge

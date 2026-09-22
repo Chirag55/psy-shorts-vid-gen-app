@@ -43,6 +43,18 @@ export async function prepareMascot(sourceUri: string, emotion: string): Promise
   const width = source.width();
   const height = source.height();
 
+  // A mascot overlay is never displayed above a few hundred pixels wide, so a
+  // multi-megapixel source buys nothing and costs a pixel buffer of
+  // width*height*4 bytes plus a flood-fill stack over every pixel.
+  const MAX_PIXELS = 4_000_000;
+  if (width * height > MAX_PIXELS) {
+    source.dispose();
+    data.dispose();
+    throw new Error(
+      `That image is ${width}x${height}, which is larger than this needs. Scale it to roughly 600px wide and import it again.`
+    );
+  }
+
   const info = {
     width,
     height,
@@ -51,6 +63,8 @@ export async function prepareMascot(sourceUri: string, emotion: string): Promise
   };
 
   const raw = source.readPixels(0, 0, info);
+  source.dispose();
+  data.dispose();
   if (!raw) throw new Error('Could not read the image pixels.');
 
   const pixels = raw instanceof Uint8Array ? raw : new Uint8Array(raw.buffer);
@@ -60,7 +74,12 @@ export async function prepareMascot(sourceUri: string, emotion: string): Promise
   const output = Skia.Image.MakeImage(info, Skia.Data.fromBytes(pixels), width * 4);
   if (!output) throw new Error('Could not rebuild the image after removing its background.');
 
-  const bytes = output.encodeToBytes(ImageFormat.PNG, 100);
+  let bytes: Uint8Array | null;
+  try {
+    bytes = output.encodeToBytes(ImageFormat.PNG, 100);
+  } finally {
+    output.dispose();
+  }
   if (!bytes) throw new Error('Could not encode the transparent PNG.');
 
   const target: File = bucketFile('stills', '_mascot', `${emotion}.png`);

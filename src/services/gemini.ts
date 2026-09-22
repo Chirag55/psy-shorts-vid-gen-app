@@ -6,6 +6,7 @@ import {
   type ShortStructure,
 } from '@/core/prompts';
 import { withStyleLock } from '@/core/styleLock';
+import { stripMascotFromPrompt } from '@/core/promptHygiene';
 import { moveForChapter } from '@/core/kenburns';
 import type { LongScript, ShortScript } from '@/core/types';
 import { describeTransient, isTransient, withRetry } from '@/core/retry';
@@ -209,9 +210,9 @@ export async function generateLongScript(
       ...c,
       index: i + 1,
       kenBurns: moveForChapter(i),
-      heroA: withStyleLock(c.heroA),
-      heroB: withStyleLock(c.heroB),
-      stillPrompt: withStyleLock(c.stillPrompt),
+      heroA: withStyleLock(stripMascotFromPrompt(c.heroA)),
+      heroB: withStyleLock(stripMascotFromPrompt(c.heroB)),
+      stillPrompt: withStyleLock(stripMascotFromPrompt(c.stillPrompt)),
     })),
   };
 }

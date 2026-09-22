@@ -14,6 +14,7 @@ import {
   type ShortStructure,
 } from '@/core/prompts';
 import { withStyleLock } from '@/core/styleLock';
+import { stripMascotFromPrompt } from '@/core/promptHygiene';
 import { moveForChapter } from '@/core/kenburns';
 import type { LongScript, ShortScript } from '@/core/types';
 import type { TopicIdea } from './gemini';
@@ -120,7 +121,7 @@ export async function generateShortScript(
     characterDescription: raw.characterDescription,
     archetype: raw.archetype,
     hashtags: raw.hashtags ?? [],
-    beats: raw.beats.map((b) => ({ ...b, clipPrompt: withStyleLock(b.clipPrompt) })),
+    beats: raw.beats.map((b) => ({ ...b, clipPrompt: withStyleLock(stripMascotFromPrompt(b.clipPrompt)) })),
   };
 }
 
@@ -150,9 +151,9 @@ export async function generateLongScript(
       ...c,
       index: i + 1,
       kenBurns: moveForChapter(i),
-      heroA: withStyleLock(c.heroA),
-      heroB: withStyleLock(c.heroB),
-      stillPrompt: withStyleLock(c.stillPrompt),
+      heroA: withStyleLock(stripMascotFromPrompt(c.heroA)),
+      heroB: withStyleLock(stripMascotFromPrompt(c.heroB)),
+      stillPrompt: withStyleLock(stripMascotFromPrompt(c.stillPrompt)),
     })),
   };
 }
