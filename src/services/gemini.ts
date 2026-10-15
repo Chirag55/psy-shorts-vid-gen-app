@@ -1,148 +1,208 @@
-import { LONGFORM_RESPONSE_SCHEMA, SHORTFORM_RESPONSE_SCHEMA, TOPIC_IDEAS_SCHEMA } from '@/core/schemas';
+import { DEFAULT_CLIP_BUDGET } from '@/core/shots';
+import { layer2Prompt, parseLayer2Response, type Layer2Item, type Layer2Label } from '@/core/researchLayer2';
+import {
+  FILL_BLANKS_SCHEMA,
+  LONGFORM_RESPONSE_SCHEMA,
+  RELEVANCE_LABELS_SCHEMA,
+  SHORTFORM_RESPONSE_SCHEMA,
+  TITLE_CHECK_SCHEMA,
+  TOPIC_IDEAS_SCHEMA,
+} from '@/core/schemas';
 import {
   longFormInstruction,
   shortFormInstruction,
+  titleCheckInstruction,
   topicIdeasInstruction,
+  type PromptEntry,
   type ShortStructure,
 } from '@/core/prompts';
-import { withStyleLock } from '@/core/styleLock';
-import { stripMascotFromPrompt } from '@/core/promptHygiene';
-import { moveForChapter } from '@/core/kenburns';
-import type { LongScript, ShortScript } from '@/core/types';
-import { describeTransient, isTransient, withRetry } from '@/core/retry';
+import { toLongScript, toShortScript } from '@/core/scriptMapping';
+import {
+  classifyGeminiFailure,
+  describeAllFailed,
+  describeExhausted,
+  nextStep,
+  planModelOrder,
+  ScriptProviderError,
+  summariseKinds,
+  type FailureKind,
+  type GeminiFailure,
+} from '@/core/retry';
 import {
   describeValidationError,
+  FillBlanksSchema,
   LongScriptSchema,
+  RelevanceLabelsSchema,
   ShortScriptSchema,
+  TitleCheckSchema,
   TopicIdeasSchema,
 } from '@/core/scriptSchemas';
+import type { TitleRuleConfig } from '@/core/titleRules';
+import type { LongScript, ShortScript } from '@/core/types';
+import type { z } from 'zod';
 
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
-/**
- * Google retires model ids and returns 404 for them on existing keys, so a
- * hardcoded id is a time bomb — `gemini-2.5-flash` was the default here until it
- * stopped being available. Settings can list live models from the API and pick
- * one; this is only the starting point.
- */
+/** Google retires model ids; Settings lists live ones. This alias always resolves. */
 export const DEFAULT_GEMINI_MODEL = 'gemini-flash-latest';
 
-export class GeminiError extends Error {}
+/** Used when the model list cannot be loaded. */
+const FALLBACK_MODELS = ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+const MODEL_LIST_TTL_MS = 30 * 60 * 1000;
 
-interface GenerateOptions {
+export class GeminiError extends ScriptProviderError {
+  constructor(message: string, kind: FailureKind = 'other') {
+    super(message, kind, 'gemini');
+    this.name = 'GeminiError';
+  }
+}
+
+export interface GenerateOptions {
   apiKey: string;
   model?: string;
   signal?: AbortSignal;
+  /** Short progress lines ("gemini-2.5-flash is busy — retrying in 2s…"). */
+  onNotice?: (text: string) => void;
 }
 
-async function generateJson<T>(
-  opts: GenerateOptions,
-  instruction: string,
-  schema: unknown,
-  validate: (value: unknown) => T
-): Promise<T> {
-  const model = opts.model || DEFAULT_GEMINI_MODEL;
+type CallResult = { ok: true; text: string } | { ok: false; failure: GeminiFailure };
 
-  // Overload and rate-limit responses clear on their own, so they are retried
-  // with backoff rather than shown to the user as a dead end.
-  const attempt = await withRetry<string>(async () => {
-    let res: Response;
-    try {
-      res = await fetch(`${API_BASE}/models/${model}:generateContent`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': opts.apiKey,
-        },
-        signal: opts.signal,
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: instruction }] }],
-          generationConfig: {
-            temperature: 0.7,
-            topP: 0.95,
-            responseMimeType: 'application/json',
-            responseSchema: schema,
-          },
-        }),
-      });
-    } catch (error) {
-      // A dropped connection is as transient as a 503.
-      if (opts.signal?.aborted) throw error;
-      return { status: 0, retryable: true };
-    }
-
-    if (res.ok) return { value: await res.text(), status: res.status, retryable: false };
-    return { status: res.status, retryable: isTransient(res.status) };
-  });
-
-  if (attempt.value === undefined) {
-    const status = attempt.status;
-
-    if (isTransient(status) || status === 0) {
-      throw new GeminiError(
-        status === 0
-          ? 'Could not reach Gemini. Check the connection and try again.'
-          : describeTransient(status, 'Gemini')
-      );
-    }
-
-    // A retired model is the most common failure and the least obvious from a
-    // raw 404 body, so name the fix rather than echoing Google's JSON.
-    if (status === 404) {
-      throw new GeminiError(
-        `The model "${model}" is not available on this key. Open Settings and choose another — "Load available models" lists what your key can actually use.`
-      );
-    }
-    if (status === 401 || status === 403) {
-      throw new GeminiError('Gemini rejected the API key. Check it in Settings.');
-    }
-    throw new GeminiError(`Gemini returned ${status}.`);
-  }
-
-  const payload = JSON.parse(attempt.value) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>;
-    promptFeedback?: { blockReason?: string };
-  };
-  const text: string | undefined = payload?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-  if (!text) {
-    const reason = payload?.candidates?.[0]?.finishReason ?? payload?.promptFeedback?.blockReason;
-    throw new GeminiError(
-      reason ? `Gemini returned no content (${reason}).` : 'Gemini returned an empty response.'
-    );
-  }
-
-  let parsed: unknown;
+async function callModel(opts: GenerateOptions, model: string, instruction: string, schema: unknown): Promise<CallResult> {
+  let res: Response;
   try {
-    parsed = JSON.parse(text);
+    res = await fetch(`${API_BASE}/models/${model}:generateContent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': opts.apiKey },
+      signal: opts.signal,
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: instruction }] }],
+        generationConfig: { temperature: 0.7, topP: 0.95, responseMimeType: 'application/json', responseSchema: schema },
+      }),
+    });
+  } catch (e) {
+    if (opts.signal?.aborted) throw e;
+    return { ok: false, failure: classifyGeminiFailure(0) };
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    return { ok: false, failure: classifyGeminiFailure(res.status, body) };
+  }
+  return { ok: true, text: await res.text() };
+}
+
+const modelCache = new Map<string, { ids: string[]; at: number }>();
+
+async function availableModelIds(apiKey: string): Promise<string[]> {
+  const cached = modelCache.get(apiKey);
+  if (cached && Date.now() - cached.at < MODEL_LIST_TTL_MS) return cached.ids;
+  try {
+    const ids = (await listGeminiModels(apiKey)).map((m) => m.id);
+    modelCache.set(apiKey, { ids, at: Date.now() });
+    return ids;
+  } catch {
+    return FALLBACK_MODELS;
+  }
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('Cancelled.'));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new Error('Cancelled.'));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function failureLabel(kind: FailureKind): string {
+  if (kind === 'quota-day') return 'is out of quota for today';
+  if (kind === 'rate-minute') return 'hit its per-minute limit';
+  return kind === 'overloaded' ? 'is overloaded' : 'is unavailable';
+}
+
+/**
+ * One structured generation. Transient failures are retried on the same model;
+ * capacity failures move down the key's model list (planned once, lazily).
+ */
+async function generateJson<T>(opts: GenerateOptions, instruction: string, schema: unknown, parse: (value: unknown) => T): Promise<T> {
+  const requested = opts.model || DEFAULT_GEMINI_MODEL;
+  let models = [requested];
+  let planned = false;
+  const attempts: { model: string; failure: GeminiFailure }[] = [];
+  for (let i = 0; i < models.length; i++) {
+    const model = models[i];
+    for (let tries = 0; ; tries++) {
+      const res = await callModel(opts, model, instruction, schema);
+      if (res.ok) {
+        if (model !== requested) opts.onNotice?.(`Written with ${model} — ${requested} was unavailable.`);
+        return parseGenerated(res.text, parse);
+      }
+      const failure = res.failure;
+      const step = nextStep(failure, tries);
+      if (step.action === 'stop') {
+        const message =
+          failure.kind === 'bad-request'
+            ? `Gemini rejected the request${failure.detail ? `: ${failure.detail}` : '.'}`
+            : describeExhausted(failure.kind, 'Gemini', []);
+        throw new GeminiError(message, failure.kind);
+      }
+      if (step.action === 'retry-same') {
+        opts.onNotice?.(`${model} is busy — retrying in ${Math.ceil(step.waitMs / 1000)}s…`);
+        await sleep(step.waitMs, opts.signal);
+        continue;
+      }
+      attempts.push({ model, failure });
+      if (!planned) {
+        planned = true;
+        models = planModelOrder(requested, await availableModelIds(opts.apiKey));
+      }
+      if (i + 1 < models.length) opts.onNotice?.(`${model} ${failureLabel(failure.kind)} — trying ${models[i + 1]}…`);
+      break;
+    }
+  }
+  throw new GeminiError(describeAllFailed('Gemini', attempts), summariseKinds(attempts.map((a) => a.failure.kind)));
+}
+
+function parseGenerated<T>(body: string, parse: (value: unknown) => T): T {
+  const json = JSON.parse(body);
+  const text: string | undefined = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) {
+    const reason = json?.candidates?.[0]?.finishReason ?? json?.promptFeedback?.blockReason;
+    throw new GeminiError(reason ? `Gemini returned no content (${reason}).` : 'Gemini returned an empty response.');
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
   } catch {
     throw new GeminiError('Gemini returned malformed JSON despite the response schema.');
   }
-
-  // The response schema shapes generation but does not guarantee the payload,
-  // so validate before any of it reaches the storyboard.
-  return validate(parsed);
+  return parse(value);
 }
 
-/** Lists the models this key can actually call, newest generations first. */
-export async function listGeminiModels(apiKey: string): Promise<Array<{ id: string; label: string }>> {
-  const res = await fetch(`${API_BASE}/models?pageSize=200`, {
-    headers: { 'x-goog-api-key': apiKey },
-  });
-  if (!res.ok) {
-    throw new GeminiError(`Could not list models (${res.status}). Check the API key.`);
-  }
-
-  const data = (await res.json()) as {
-    models?: Array<{ name?: string; displayName?: string; supportedGenerationMethods?: string[] }>;
+function validator<S extends z.ZodTypeAny>(schema: S): (value: unknown) => z.infer<S> {
+  return (value) => {
+    const r = schema.safeParse(value);
+    if (!r.success) throw new GeminiError(describeValidationError(r.error), 'other');
+    return r.data;
   };
+}
 
-  return (data.models ?? [])
+export async function listGeminiModels(apiKey: string): Promise<Array<{ id: string; label: string }>> {
+  const res = await fetch(`${API_BASE}/models?pageSize=200`, { headers: { 'x-goog-api-key': apiKey } });
+  if (!res.ok) throw new GeminiError(`Could not list models (${res.status}). Check the API key.`);
+  const json = await res.json();
+  const models: any[] = json.models ?? [];
+  return models
     .filter((m) => m.supportedGenerationMethods?.includes('generateContent'))
-    .map((m) => ({
-      id: (m.name ?? '').replace(/^models\//, ''),
-      label: m.displayName ?? (m.name ?? '').replace(/^models\//, ''),
-    }))
+    .map((m) => ({ id: (m.name ?? '').replace(/^models\//, ''), label: m.displayName ?? (m.name ?? '').replace(/^models\//, '') }))
     .filter((m) => m.id && !m.id.includes('embedding') && !m.id.includes('aqa'))
     .sort((a, b) => b.id.localeCompare(a.id, undefined, { numeric: true }));
 }
@@ -152,69 +212,43 @@ export async function generateShortScript(
   topic: string,
   category: string,
   recentArchetypes: string[] = [],
-  performanceContext = '',
-  structure: ShortStructure = 'single'
+  extraPrompt = '',
+  structure: ShortStructure | string = 'single',
+  clipBudget: number = DEFAULT_CLIP_BUDGET,
+  entry?: PromptEntry & { id?: string; tag_line?: string },
+  titles?: TitleRuleConfig,
 ): Promise<ShortScript> {
   const raw = await generateJson(
     opts,
-    shortFormInstruction(topic, category, recentArchetypes, structure) + performanceContext,
+    shortFormInstruction(topic, category, recentArchetypes, structure, clipBudget, entry, titles) + extraPrompt,
     SHORTFORM_RESPONSE_SCHEMA,
-    (value) => {
-      const result = ShortScriptSchema.safeParse(value);
-      if (!result.success) throw new GeminiError(describeValidationError(result.error));
-      return result.data;
-    }
+    validator(ShortScriptSchema),
   );
-
-  // The style lock is in the prompt, but enforce it here too — a clip generated
-  // without it breaks visual continuity for the whole video and wastes credits.
-  return {
-    mode: 'short',
-    title: raw.title,
-    hookLine: raw.hookLine,
-    characterDescription: raw.characterDescription,
-    archetype: raw.archetype,
-    hashtags: raw.hashtags ?? [],
-    beats: (raw.beats ?? []).map((b) => ({ ...b, clipPrompt: withStyleLock((b as any).clipPrompt ?? "") })),
-  };
+  return toShortScript(raw, structure, entry);
 }
 
 export async function generateLongScript(
   opts: GenerateOptions,
   topic: string,
   category: string,
-  chapterCount = 4,
+  chapters = 4,
   recentArchetypes: string[] = [],
-  performanceContext = ''
+  extraPrompt = '',
+  structure = 'standard',
+  entry?: PromptEntry & { id?: string },
 ): Promise<LongScript> {
   const raw = await generateJson(
     opts,
-    longFormInstruction(topic, category, chapterCount, recentArchetypes) + performanceContext,
+    longFormInstruction(topic, category, chapters, recentArchetypes, structure, entry) + extraPrompt,
     LONGFORM_RESPONSE_SCHEMA,
-    (value) => {
-      const result = LongScriptSchema.safeParse(value);
-      if (!result.success) throw new GeminiError(describeValidationError(result.error));
-      return result.data;
-    }
+    validator(LongScriptSchema),
   );
+  return toLongScript(raw, structure, entry);
+}
 
-  return {
-    mode: 'long',
-    title: raw.title,
-    coldOpen: raw.coldOpen,
-    characterDescription: raw.characterDescription,
-    archetype: raw.archetype,
-    closingSynthesis: raw.closingSynthesis,
-    tags: raw.tags ?? [],
-    chapters: (raw.chapters ?? []).map((c, i) => ({
-      ...c,
-      index: i + 1,
-      kenBurns: moveForChapter(i),
-      heroA: withStyleLock(stripMascotFromPrompt(c.heroA)),
-      heroB: withStyleLock(stripMascotFromPrompt(c.heroB)),
-      stillPrompt: withStyleLock(stripMascotFromPrompt(c.stillPrompt)),
-    })),
-  };
+/** A free-form structured call (shot planning) with the same fallback behaviour. */
+export async function planVisuals<T = unknown>(opts: GenerateOptions, instruction: string, schema: unknown): Promise<T> {
+  return generateJson(opts, instruction, schema, (v) => v as T);
 }
 
 export interface TopicIdea {
@@ -228,22 +262,18 @@ export async function generateTopicIdeas(
   category: string,
   count: number,
   existing: string[],
-  performanceContext = ''
+  extraPrompt = '',
+  priority?: string[],
 ): Promise<TopicIdea[]> {
-  const raw = await generateJson(
+  const res = await generateJson(
     opts,
-    topicIdeasInstruction(category, count, existing) + performanceContext,
+    topicIdeasInstruction(category, count, existing, priority) + extraPrompt,
     TOPIC_IDEAS_SCHEMA,
-    (value) => {
-      const result = TopicIdeasSchema.safeParse(value);
-      if (!result.success) throw new GeminiError(describeValidationError(result.error));
-      return result.data;
-    }
+    validator(TopicIdeasSchema),
   );
-  return raw.topics;
+  return res.topics;
 }
 
-/** Cheap reachability probe for the Settings screen's key status row. */
 export async function verifyGeminiKey(apiKey: string): Promise<boolean> {
   try {
     const res = await fetch(`${API_BASE}/models`, { headers: { 'x-goog-api-key': apiKey } });
@@ -251,4 +281,18 @@ export async function verifyGeminiKey(apiKey: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Research layer 2 labels for a batch of candidate Shorts. */
+export async function classifyRelevance(opts: GenerateOptions, items: Layer2Item[]): Promise<Map<string, Layer2Label>> {
+  const json = await generateJson(opts, layer2Prompt(items), RELEVANCE_LABELS_SCHEMA, validator(RelevanceLabelsSchema));
+  return parseLayer2Response(json, items);
+}
+
+export async function fillBlanks(opts: GenerateOptions, instruction: string): Promise<z.infer<typeof FillBlanksSchema>> {
+  return generateJson(opts, instruction, FILL_BLANKS_SCHEMA, validator(FillBlanksSchema));
+}
+
+export async function checkTitle(opts: GenerateOptions, title: string): Promise<z.infer<typeof TitleCheckSchema>> {
+  return generateJson(opts, titleCheckInstruction(title), TITLE_CHECK_SCHEMA, validator(TitleCheckSchema));
 }

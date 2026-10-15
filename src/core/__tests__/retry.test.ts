@@ -1,101 +1,53 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { backoffDelay, describeTransient, isTransient, withRetry } from '../retry';
+import { classifyGeminiFailure, describeExhausted, nextStep, parseRetryDelay, planModelOrder, summariseKinds } from '../retry';
 
-const noSleep = async () => {};
-
-describe('isTransient', () => {
-  it('retries overload and rate limiting', () => {
-    for (const status of [429, 500, 502, 503, 504]) {
-      assert.equal(isTransient(status), true, `${status} should retry`);
-    }
+describe('classifyGeminiFailure', () => {
+  it('reads a daily quota violation', () => {
+    const body = JSON.stringify({ error: { message: 'Quota exceeded', details: [{ violations: [{ quotaId: 'GenerateRequestsPerDayPerProject', quotaValue: '50' }] }, { retryDelay: '12s' }] } });
+    const f = classifyGeminiFailure(429, body);
+    assert.equal(f.kind, 'quota-day');
+    assert.equal(f.limit, 50);
+    assert.equal(f.retryAfterMs, 12000);
   });
-
-  it('does not retry a bad key or a missing model', () => {
-    for (const status of [400, 401, 403, 404]) {
-      assert.equal(isTransient(status), false, `${status} should not retry`);
-    }
+  it('treats limit 0 as unavailable on this key', () => {
+    const body = JSON.stringify({ error: { message: 'limit: 0', details: [] } });
+    assert.equal(classifyGeminiFailure(429, body).kind, 'unavailable');
   });
-});
-
-describe('backoffDelay', () => {
-  it('grows with each attempt', () => {
-    const plan = { attempts: 4, baseDelayMs: 1000 };
-    assert.ok(backoffDelay(2, plan) > backoffDelay(0, plan));
-  });
-
-  it('stays under the ceiling', () => {
-    const plan = { attempts: 10, baseDelayMs: 1000 };
-    assert.ok(backoffDelay(9, plan) <= 15_000);
-  });
-
-  it('adds jitter so parallel retries do not resynchronise', () => {
-    const plan = { attempts: 4, baseDelayMs: 1000 };
-    const samples = new Set(Array.from({ length: 20 }, () => backoffDelay(1, plan)));
-    assert.ok(samples.size > 1);
+  it('maps statuses', () => {
+    assert.equal(classifyGeminiFailure(0).kind, 'network');
+    assert.equal(classifyGeminiFailure(503).kind, 'overloaded');
+    assert.equal(classifyGeminiFailure(403).kind, 'auth');
   });
 });
 
-describe('withRetry', () => {
-  it('returns immediately on success', async () => {
-    let calls = 0;
-    const result = await withRetry(async () => {
-      calls++;
-      return { value: 'ok', status: 200, retryable: false };
-    }, { attempts: 4, baseDelayMs: 1 }, noSleep);
-
-    assert.equal(result.value, 'ok');
-    assert.equal(calls, 1);
+describe('nextStep', () => {
+  it('stops on auth, moves on for a used-up quota', () => {
+    assert.deepEqual(nextStep({ kind: 'auth', status: 401 }, 0), { action: 'stop' });
+    assert.deepEqual(nextStep({ kind: 'quota-day', status: 429 }, 0), { action: 'next-model' });
   });
-
-  it('retries a transient failure then succeeds', async () => {
-    let calls = 0;
-    const result = await withRetry(async () => {
-      calls++;
-      return calls < 3
-        ? { status: 503, retryable: true }
-        : { value: 'recovered', status: 200, retryable: false };
-    }, { attempts: 4, baseDelayMs: 1 }, noSleep);
-
-    assert.equal(result.value, 'recovered');
-    assert.equal(calls, 3);
+  it('waits out a short rate limit once', () => {
+    assert.deepEqual(nextStep({ kind: 'rate-minute', status: 429, retryAfterMs: 5000 }, 0), { action: 'retry-same', waitMs: 5000 });
+    assert.deepEqual(nextStep({ kind: 'rate-minute', status: 429, retryAfterMs: 5000 }, 1), { action: 'next-model' });
   });
-
-  it('gives up after the planned attempts', async () => {
-    let calls = 0;
-    const result = await withRetry(async () => {
-      calls++;
-      return { status: 503, retryable: true };
-    }, { attempts: 3, baseDelayMs: 1 }, noSleep);
-
-    assert.equal(calls, 3);
-    assert.equal(result.value, undefined);
-    assert.equal(result.status, 503);
-  });
-
-  it('stops immediately on a non-retryable status', async () => {
-    let calls = 0;
-    const result = await withRetry(async () => {
-      calls++;
-      return { status: 404, retryable: false };
-    }, { attempts: 4, baseDelayMs: 1 }, noSleep);
-
-    assert.equal(calls, 1, 'a missing model must not be retried four times');
-    assert.equal(result.status, 404);
+  it('backs off on overload', () => {
+    assert.deepEqual(nextStep({ kind: 'overloaded', status: 503 }, 1), { action: 'retry-same', waitMs: 3000 });
   });
 });
 
-describe('describeTransient', () => {
-  it('explains an overload as the provider’s problem', () => {
-    assert.match(describeTransient(503, 'Gemini'), /overloaded/);
-    assert.match(describeTransient(503, 'Gemini'), /their side, not yours/);
+describe('planModelOrder', () => {
+  it('puts the preferred model first and drops non-text models', () => {
+    const order = planModelOrder('gemini-2.5-pro', ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'veo-3', 'gemini-embedding-001', 'gemini-flash-latest']);
+    assert.deepEqual(order, ['gemini-2.5-pro', 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']);
   });
+});
 
-  it('explains rate limiting', () => {
-    assert.match(describeTransient(429, 'Gemini'), /rate limiting/);
+describe('messages', () => {
+  it('summarises mixed kinds', () => {
+    assert.equal(summariseKinds(['auth', 'overloaded']), 'overloaded');
+    assert.equal(parseRetryDelay('800ms'), 800);
   });
-
-  it('names the provider', () => {
-    assert.match(describeTransient(500, 'Anthropic'), /Anthropic/);
+  it('explains a used-up day', () => {
+    assert.match(describeExhausted('quota-day', 'Gemini', ['a']), /midnight US Pacific/);
   });
 });
