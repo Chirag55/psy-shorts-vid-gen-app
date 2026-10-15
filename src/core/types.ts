@@ -44,6 +44,21 @@ export interface ShortBeat {
 export interface ShortScript {
   mode: 'short';
   title: string;
+  /** Short structure: the classic three beats, a rapid list, a list, or a test/quiz. */
+  structure?: string;
+  /** Word target set by the bank entry (overrides the structure's default window). */
+  wordTarget?: number;
+  /** Bank entry this script came from; assigned scripts skip the free-writing checks. */
+  bankEntryId?: string;
+  /** Set when the narration was supplied verbatim (e.g. from the bank) rather than written by a model. */
+  scriptSource?: string;
+  tactic?: string;
+  hookText?: string;
+  hookTextPov?: string;
+  hookCard?: string;
+  loopBridge?: string;
+  ctaQuestion?: string;
+  stimulus?: { card?: unknown; description?: string } | null;
   hookLine: string;
   beats: ShortBeat[];
   /** Wardrobe + setting, restated in clips 2 and 3 to hold continuity. */
@@ -55,6 +70,8 @@ export interface ShortScript {
 export interface LongScript {
   mode: 'long';
   title: string;
+  structure?: string;
+  wordTarget?: number;
   coldOpen: string;
   chapters: Chapter[];
   closingSynthesis: string;

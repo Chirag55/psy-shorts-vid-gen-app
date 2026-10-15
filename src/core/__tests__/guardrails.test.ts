@@ -40,15 +40,20 @@ describe('validateScript — shorts', () => {
     assert.equal(issues.filter((i) => i.severity === 'error').length, 0);
   });
 
-  it('errors past the hard cap of 72 words', () => {
+  it('errors past the hard cap of 66 words', () => {
     const issues = validateScript(shortScript(80));
     assert.ok(issues.some((i) => i.severity === 'error' && /hard cap/.test(i.message)));
   });
 
   it('warns between the target and the hard cap', () => {
-    const issues = validateScript(shortScript(71));
-    assert.ok(issues.some((i) => i.severity === 'warning'));
+    const issues = validateScript({ ...shortScript(70), wordTarget: 64 });
+    assert.ok(issues.some((i) => i.severity === 'warning' && /over the 68-word target/.test(i.message)));
     assert.equal(issues.filter((i) => i.severity === 'error').length, 0);
+  });
+
+  it('errors when the calm pace runs past 45 s', () => {
+    const issues = validateScript({ ...shortScript(92), structure: 'list', wordTarget: 92 });
+    assert.ok(issues.some((i) => i.severity === 'error' && /calm pace/.test(i.message)));
   });
 
   it('errors when the three-beat structure is broken', () => {
@@ -98,9 +103,9 @@ describe('checkVoiceQuota', () => {
     assert.match(check.reason ?? '', /safety ceiling/);
   });
 
-  it('scales the ceiling to 90% on a larger plan', () => {
+  it('scales the ceiling to 90% of the plan (CR-88F)', () => {
     const check = checkVoiceQuota('a', 0, 100_000);
-    assert.equal(check.ceiling, 9_000);
+    assert.equal(check.ceiling, 90_000);
   });
 
   it('never reports negative remaining characters', () => {
