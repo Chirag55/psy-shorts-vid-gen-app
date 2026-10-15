@@ -1,0 +1,20 @@
+"""Fixed written look for every named character. Pasted into every still and clip prompt that names the character."""
+CAST = {
+ 'Alex':  "Alex, 28: short slightly messy dark-brown hair, warm medium skin tone, brown eyes, medium build, navy hoodie over a plain white tee, grey trousers, white sneakers.",
+ 'Maya':  "Maya, 27: shoulder-length wavy black hair in a low ponytail, warm medium-brown skin tone, dark eyes, small round silver earrings, mustard-yellow cardigan over a soft grey top, dark jeans.",
+ 'Sam': 'Sam, 26: lean, messy light-brown hair, fair skin with a few freckles, grey-blue eyes, burgundy hoodie, black jeans, canvas sneakers.',
+ 'Nora':  "Nora, 31: fair skin with light freckles, auburn chin-length bob with side-swept bangs, green-brown eyes, cream turtleneck, camel wool coat.",
+ 'Ryan':  "Ryan, 29: short sandy-blond hair, light stubble, fair skin, a slightly sunburnt nose, red-and-brown plaid shirt, tan chinos.",
+ 'Jordan': 'Jordan, 30: medium build, short dark-brown hair with a side parting, tan skin tone, light stubble, olive-green jacket over a white tee, dark jeans.',
+ 'Chris': 'Chris, 33: stocky, closely cropped dark hair, deep-brown skin tone, thick-framed glasses, mustard sweater over a collared shirt, khaki trousers.',
+ 'Ben': 'Ben, 28: tall, wavy dark hair to the ears, light-olive skin tone, short stubble, teal bomber jacket over a grey tee, black trousers.',
+ 'Jamie': 'Jamie, 29: long black hair in a side braid, medium-brown skin tone, teal blouse over white trousers, small silver studs.',
+ 'Riley': 'Riley, 25: short black bob with a fringe, light-brown skin tone, round tortoiseshell glasses, mint-green sweater, blue jeans.',
+ 'Nina': 'Nina, 31: long wavy dark-brown hair, olive skin tone, hazel eyes, a deep red coat over a black top, grey scarf.',
+ 'Ella': 'Ella, 27: shoulder-length auburn hair with a centre parting, fair skin, lavender blouse, beige trousers, small gold studs.',
+ 'Mara': 'Mara, 30: long straight dark hair to the middle of her back, medium-brown skin tone, large dark eyes, deep plum cardigan over a cream blouse, black trousers.',
+ 'Kai': 'Kai, 32: tall, broad shoulders, short neat dark hair, trimmed stubble, light-brown skin tone, charcoal shirt with the sleeves rolled to the elbow, a dark watch.',
+ 'Tess': 'Tess, 29: curly dark hair in a high bun, thin round gold-framed glasses, warm tan skin tone, rust-orange sweater over a white tee, dark jeans.',
+ 'Drew': 'Drew, 34: tall and lean, short dark hair with grey at the temples, dark skin tone, rimless glasses, navy blazer over a light-blue shirt, no tie.',
+ 'Leo': 'Leo, 31: medium build, short curly dark-blond hair, light-tan skin tone, clean-shaven, forest-green sweater over a white shirt, dark jeans.',
+}

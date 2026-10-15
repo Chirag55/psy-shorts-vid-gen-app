@@ -1,0 +1,545 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Mind Files Studio Brief</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Public+Sans:ital,wght@0,400;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  :root {
+    --bg: #F3F5F8;
+    --surface: #FFFFFF;
+    --ink: #16202E;
+    --muted: #566274;
+    --line: #D8DEE6;
+    --accent: #2E4E85;
+    --accent-soft: #E6ECF6;
+    --mark: #FFF000;
+    --mark-ink: #16202E;
+    --ok: #1F7A4D;
+    --ok-soft: #E3F3EA;
+    --warn: #9A5B00;
+    --warn-soft: #FBF0DC;
+    --display: "Anton", "Impact", "Arial Narrow", sans-serif;
+    --body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #0E131A;
+      --surface: #151C26;
+      --ink: #E6EBF2;
+      --muted: #9AA6B6;
+      --line: #263142;
+      --accent: #93B2E8;
+      --accent-soft: #1C2738;
+      --mark-ink: #0E131A;
+      --ok: #6FD3A0;
+      --ok-soft: #13291F;
+      --warn: #F0B45A;
+      --warn-soft: #2B2211;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0E131A;
+    --surface: #151C26;
+    --ink: #E6EBF2;
+    --muted: #9AA6B6;
+    --line: #263142;
+    --accent: #93B2E8;
+    --accent-soft: #1C2738;
+    --mark-ink: #0E131A;
+    --ok: #6FD3A0;
+    --ok-soft: #13291F;
+    --warn: #F0B45A;
+    --warn-soft: #2B2211;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.6;
+    padding-inline: 16px;
+    padding-block: 32px 64px;
+  }
+  .page { max-width: 760px; margin: 0 auto; display: grid; gap: 44px; }
+
+  header { display: grid; gap: 14px; }
+  .fileno {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: flex; flex-wrap: wrap; gap: 6px 18px;
+  }
+  h1, h2 {
+    font-family: var(--display);
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 0.01em;
+    line-height: 1.05;
+    text-wrap: balance;
+    margin: 0;
+  }
+  h1 { font-size: clamp(38px, 8vw, 60px); }
+  h1 .hl { background: var(--mark); color: var(--mark-ink); padding: 0 0.12em; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  h2 { font-size: clamp(26px, 5vw, 32px); }
+  h3 { font-size: 17px; margin: 0; font-weight: 700; }
+  p { margin: 0; max-width: 66ch; }
+  .lede { font-size: 18px; color: var(--ink); }
+  .muted { color: var(--muted); }
+  a { color: var(--accent); }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  nav.toc { display: flex; flex-wrap: wrap; gap: 8px; }
+  nav.toc a {
+    font-size: 13px; font-weight: 600; text-decoration: none;
+    color: var(--accent); background: var(--accent-soft);
+    padding: 4px 10px; border-radius: 999px;
+  }
+
+  section { display: grid; gap: 16px; }
+  .section-head { display: grid; gap: 6px; border-top: 2px solid var(--ink); padding-top: 14px; }
+  .kicker { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .fact { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; display: grid; gap: 4px; align-content: start; }
+  .fact .label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .fact .value { font-weight: 700; font-size: 17px; line-height: 1.3; }
+  .fact .note { font-size: 14px; color: var(--muted); }
+
+  ol.pipeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; counter-reset: step; }
+  ol.pipeline li { counter-increment: step; display: grid; grid-template-columns: 44px 1fr; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  ol.pipeline li::before {
+    content: counter(step, decimal-leading-zero);
+    font-family: var(--mono); font-weight: 600; font-size: 14px; color: var(--accent);
+    padding-top: 2px;
+  }
+  ol.pipeline li div { display: grid; gap: 2px; }
+  ol.pipeline p { font-size: 15px; color: var(--muted); }
+  .tag { display: inline-block; font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; padding: 1px 7px; border-radius: 4px; vertical-align: 2px; margin-left: 6px; font-weight: 600; }
+  .tag.auto { background: var(--ok-soft); color: var(--ok); }
+  .tag.manual { background: var(--warn-soft); color: var(--warn); }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; background: var(--accent-soft); }
+  tr:last-child td { border-bottom: 0; }
+  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  ul.rules { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 66ch; }
+  ul.rules li::marker { color: var(--accent); }
+  blockquote {
+    margin: 0; padding: 12px 16px; border-left: 3px solid var(--accent);
+    background: var(--surface); border-radius: 0 6px 6px 0; font-size: 15px; max-width: 66ch;
+  }
+  code, .mono { font-family: var(--mono); font-size: 0.88em; }
+  mark { background: var(--mark); color: var(--mark-ink); padding: 0 3px; }
+
+  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 16px; display: grid; gap: 10px; align-content: start; }
+  .panel h3 { display: flex; align-items: center; gap: 8px; }
+
+  .gaps { display: grid; gap: 10px; }
+  .gap { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--warn); border-radius: 6px; padding: 12px 16px; display: grid; gap: 4px; }
+  .gap p { font-size: 15px; color: var(--muted); }
+
+  pre.mermaid { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 16px; overflow-x: auto; margin: 0; }
+  pre.template { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; overflow-x: auto; margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.55; white-space: pre; }
+
+  footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 14px; }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+  html { scroll-behavior: smooth; }
+</style>
+
+<div class="page">
+  <header>
+    <div class="fileno"><span>The Mind Files · Studio app</span><span>v2.9.0 · build 24</span><span>25 Sep 2026</span></div>
+    <h1>How every video on <span class="hl">The Mind Files</span> gets made</h1>
+    <p class="lede">An Android app that takes a psychology topic all the way to a published YouTube video on one phone: script, visuals, voice, edit, thumbnail, upload, and a feedback loop from past results. This brief describes what it does today, the rules it writes by, and the levers a strategist can pull to get more views.</p>
+    <nav class="toc" aria-label="Sections">
+      <a href="#glance">At a glance</a>
+      <a href="#pipeline">Pipeline</a>
+      <a href="#formats">Formats</a>
+      <a href="#writing">Script rules</a>
+      <a href="#visuals">Visuals</a>
+      <a href="#packaging">Voice, captions, thumbnail</a>
+      <a href="#publishing">Publishing</a>
+      <a href="#feedback">Feedback loop</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#limits">Costs and limits</a>
+      <a href="#levers">Levers</a>
+      <a href="#gaps">Open opportunities</a>
+      <a href="#requests">Sending changes</a>
+    </nav>
+  </header>
+
+  <section id="glance">
+    <div class="section-head"><span class="kicker">Summary</span><h2>At a glance</h2></div>
+    <div class="facts">
+      <div class="fact"><span class="label">Channel</span><span class="value">The Mind Files</span><span class="note">Why humans think, react, sabotage and love the way they do.</span></div>
+      <div class="fact"><span class="label">Main format</span><span class="value">9:16 Shorts, 23–29 s</span><span class="note">55–70 spoken words at 2.4 words per second.</span></div>
+      <div class="fact"><span class="label">Second format</span><span class="value">16:9 deep dives, 3–5 min</span><span class="note">450–700 words across 3–6 chapters.</span></div>
+      <div class="fact"><span class="label">Look</span><span class="value">Anime, one recurring character</span><span class="note">Professor Hoot the owl is added as an overlay.</span></div>
+      <div class="fact"><span class="label">Runs on</span><span class="value">One Android phone, no server</span><span class="note">Projects, keys and renders stay on the device.</span></div>
+      <div class="fact"><span class="label">Success signal today</span><span class="value">View count</span><span class="note">Plus likes and comments. No retention or click-through data yet.</span></div>
+    </div>
+  </section>
+
+  <section id="pipeline">
+    <div class="section-head"><span class="kicker">End to end</span><h2>The production pipeline</h2></div>
+    <p>Each project moves through these steps in order. Only one step is manual: Google Flow has no public API, so video clips are made there and brought back.</p>
+    <ol class="pipeline">
+      <li><div><h3>Pick a topic <span class="tag auto">AUTO</span></h3><p>Typed in, or chosen from an on-device Topic Bank that the AI refills eight ideas at a time, weighted toward priority tactics.</p></div></li>
+      <li><div><h3>Write the script <span class="tag auto">AUTO</span></h3><p>Gemini or Claude writes narration plus a full shot list. Word counts and shot rules are checked before anything is spent. If a model is rate-limited, the app falls back to other models, then to the other provider.</p></div></li>
+      <li><div><h3>Storyboard the shots <span class="tag manual">MANUAL</span></h3><p>Every shot has a finished prompt with one-tap copy. Clips are generated in Google Flow and imported. Stills are imported (or generated where the key allows). A character reference card keeps the same face across shots.</p></div></li>
+      <li><div><h3>Voice the narration <span class="tag auto">AUTO</span></h3><p>ElevenLabs reads the script and returns word-level timing, which drives captions and edit timing.</p></div></li>
+      <li><div><h3>Assemble the video <span class="tag auto">AUTO</span></h3><p>FFmpeg on the phone cuts clips and moving stills to the narration, burns in captions and overlays Hoot. Draft 720p is the default; full 1080p is one switch.</p></div></li>
+      <li><div><h3>Make the thumbnail <span class="tag auto">AUTO</span></h3><p>A 1280×720 card built from a frame of the video, with a two-line headline and a category badge.</p></div></li>
+      <li><div><h3>Publish to YouTube <span class="tag auto">AUTO</span></h3><p>Upload with title, description, tags, privacy and thumbnail.</p></div></li>
+      <li><div><h3>Read results back <span class="tag auto">AUTO</span></h3><p>The Library pulls views, likes and comments for every upload and feeds a summary into the next script.</p></div></li>
+    </ol>
+  </section>
+
+  <section id="formats">
+    <div class="section-head"><span class="kicker">Enforced in code</span><h2>Formats</h2></div>
+    <p>These numbers are timing constraints, not style preferences: all narration is paced at <strong>2.4 words per second</strong>, so word counts set runtime.</p>
+    <h3>Short (9:16)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Beat</th><th>Words</th><th>Job</th></tr></thead>
+        <tbody>
+          <tr><td>Hook</td><td class="num">12–16</td><td>A counterintuitive claim that names the tactic. "Did you know" and "Have you ever" openers are banned. Opens mid-thought, at stakes.</td></tr>
+          <tr><td>Mechanism</td><td class="num">32–38</td><td>How the tactic works, no jargon, framed as being done <em>to the viewer</em> in a moment they have lived.</td></tr>
+          <tr><td>Reframe</td><td class="num">14–18</td><td>A takeaway or boundary that hands control back. Ends on a punchy closing line.</td></tr>
+          <tr><td><strong>Total</strong></td><td class="num"><strong>55–70</strong></td><td>Hard cap 72 words, about 23–29 seconds.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">A "Three tactics" variant keeps the same word budget and splits the mechanism into three 10–13 word micro-beats, one per named tactic.</p>
+
+    <h3>Deep dive (16:9)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Section</th><th>Words</th><th>Job</th></tr></thead>
+        <tbody>
+          <tr><td>Cold open</td><td class="num">12–16</td><td>A high-stakes opening image or claim.</td></tr>
+          <tr><td>Chapter ×3–6</td><td class="num">70–110</td><td>Mini-hook (12–18), mechanism told through a specific scenario (40–60), micro-reframe (16–24).</td></tr>
+          <tr><td>Closing synthesis</td><td class="num">25–35</td><td>Ties the chapters together and ends on the catchphrase: "Stay curious, keep your eyes wide, and remember: once you see the pattern, you hold the power."</td></tr>
+          <tr><td><strong>Total</strong></td><td class="num"><strong>450–700</strong></td><td>About 3–5 minutes.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="writing">
+    <div class="section-head"><span class="kicker">The brand bible</span><h2>How scripts are written</h2></div>
+    <p>Every generation request starts with the same brand definition. Changing it changes every future script, which makes it the highest-leverage text in the app.</p>
+    <blockquote>You are the head writer for "The Mind Files", a YouTube channel investigating why humans think, react, sabotage, and love the way they do. Tone: calm, warm, slightly amused intellectual curiosity. Never preachy, never clinical.</blockquote>
+    <div class="two">
+      <div class="panel">
+        <h3>Content laws</h3>
+        <ul class="rules">
+          <li><strong>Name the tactic.</strong> Every script is about one specific, named mechanism: love bombing, foot-in-the-door, triangulation, sunk cost, anchoring. Generic labels ("manipulation", "the brain") are banned.</li>
+          <li><strong>Point it at the viewer.</strong> "This is being done to you" framing, never "how to read someone".</li>
+          <li>No medical disclaimers unless the topic is a diagnosable condition.</li>
+          <li>Hoot never narrates and is never mentioned in the script.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>Characters</h3>
+        <ul class="rules">
+          <li>Relatable, stylish wardrobe (charcoal hoodie, olive chore jacket, lilac knit sweater). No occupational costumes unless the topic is that job.</li>
+          <li>Character types from the last 10 projects are excluded, so the cast keeps changing.</li>
+          <li>Each script returns one fixed description of face, hair and wardrobe that is repeated in every shot.</li>
+        </ul>
+      </div>
+    </div>
+    <h3>Topic selection</h3>
+    <p>Six categories are offered: Social Dynamics · Attachment &amp; Relationships · Cognitive Bias · Self-Sabotage · Emotional Regulation · Persuasion &amp; Influence. Topic ideas must name a specific tactic and be framed at the viewer. At least half the suggestions centre on five priority tactics picked in an earlier strategy round: <mark>love bombing</mark>, <mark>foot-in-the-door</mark>, <mark>sunk cost</mark>, <mark>anchoring bias</mark> and <mark>triangulation</mark>. Gaslighting is deprioritised (falling demand, high competition) but not banned.</p>
+    <h3>Title, description and tags</h3>
+    <p>The script also returns a title (Shorts: "punchy, max 60 characters"; deep dives: max 70), a hook line reused on the thumbnail, and hashtags. Beyond the length cap there are no title rules. A Short's description is the hook line plus the hashtags; a deep dive's description gets chapter timestamps. Everything is editable before upload.</p>
+  </section>
+
+  <section id="visuals">
+    <div class="section-head"><span class="kicker">Picture</span><h2>Visuals and shot rules</h2></div>
+    <p>A beat is a unit of narration; a shot is a unit of picture. Shorts used to come out as one person in one room for 25 seconds, so the shot list is now written and checked against these rules:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Rule</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td>Minimum shots per Short</td><td class="num">4</td></tr>
+          <tr><td>Longest a shot may hold</td><td class="num">3 s</td></tr>
+          <tr><td>Cutaways (character out of frame)</td><td class="num">≥ 1</td></tr>
+          <tr><td>Distinct settings</td><td class="num">2–3</td></tr>
+          <tr><td>Camera move named in each prompt</td><td>push in, whip pan, rack focus, overhead, macro insert…</td></tr>
+          <tr><td>Action must be a verb of change</td><td>"sitting", "stirring", "staring" and similar are banned</td></tr>
+          <tr><td>Generated video clips per Short</td><td class="num">3 by default (one per beat, first on the hook)</td></tr>
+          <tr><td>Everything else</td><td>stills, animated with a slow push-in or pan</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <ul class="rules">
+      <li><strong>Why a clip budget:</strong> each Flow clip spends paid credits. Stills cost a fraction and still move on screen, so a Short can have six or more shots while paying for three clips.</li>
+      <li><strong>Art style:</strong> anime. Every prompt ends with the same style lock, and its last words are always "anime art style".</li>
+      <li><strong>Continuity:</strong> every shot that shows the character restates the same face, hair and wardrobe. The Storyboard also offers a character reference image to make first in Flow and attach to every clip.</li>
+      <li><strong>Hoot is never in a prompt.</strong> He is added during editing; a generated owl would show up twice.</li>
+      <li><strong>Deep dives:</strong> per chapter, two 8–10 s hero clips (the character starts the tension, then escalates it) plus one symbolic still with no people in it.</li>
+    </ul>
+  </section>
+
+  <section id="packaging">
+    <div class="section-head"><span class="kicker">Packaging</span><h2>Voice, captions, mascot and thumbnail</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>Voice</h3>
+        <p>ElevenLabs, multilingual v2 model. Four voices: Will (warm, default), Adam (deep, authoritative), George (British documentary), Rachel (clear, neutral). Word-level timing comes back with the audio.</p>
+      </div>
+      <div class="panel">
+        <h3>Captions</h3>
+        <p>One word at a time in Anton, white with a heavy outline, just below the centre of the frame. Words of 7+ letters flash in <mark>neon yellow</mark>. Matched against a published channel video.</p>
+      </div>
+      <div class="panel">
+        <h3>Professor Hoot</h3>
+        <p>Bottom-left, about a fifth of the frame width, on screen for the whole Short. His expression changes per beat: surprised on the hook, thinking on the mechanism, knowing on the reframe (keywords in a line can override this). In deep dives he appears only in the first 3.5 s and last 2.5 s of each chapter.</p>
+      </div>
+      <div class="panel">
+        <h3>Thumbnail</h3>
+        <p>1280×720. A blurred, darkened frame fills the card, the same frame sits sharp in a 9:16 panel in the middle, a pill badge reads "PSYCHOLOGY FACT", a two-line headline (yellow, then white) defaults to the hook line, and Hoot appears large at the bottom. The frame is chosen from five sampled from the video.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="publishing">
+    <div class="section-head"><span class="kicker">Distribution</span><h2>Publishing</h2></div>
+    <ul class="rules">
+      <li>Uploads go straight to YouTube in category <strong>Education</strong>, marked not made for kids.</li>
+      <li>Default privacy is <strong>private</strong>; it can be changed per video or in Settings.</li>
+      <li>Uploads happen immediately. There is no scheduled publish time.</li>
+      <li>The custom thumbnail is set after upload; if YouTube rejects it, the video still goes live.</li>
+      <li>Re-publishing a project asks first, because a second upload creates a duplicate video.</li>
+    </ul>
+  </section>
+
+  <section id="feedback">
+    <div class="section-head"><span class="kicker">Learning from results</span><h2>How performance feeds back into writing</h2></div>
+    <p>When YouTube is connected and the setting is on, each new script request includes a short summary of how past uploads did:</p>
+    <ul class="rules">
+      <li>The channel's median views and the top 5 titles with their view counts.</li>
+      <li>The bottom 5 titles, labelled "AVOID THESE ANGLES", once there are more than 10 eligible videos.</li>
+      <li>Shorts are compared only with Shorts (anything 3 minutes or under), and only public videos count.</li>
+      <li>Videos newer than 2 days are left out, since they haven't had time to collect views.</li>
+      <li>With fewer than 4 eligible videos nothing is sent, so a pattern from two videos can't steer the writing.</li>
+    </ul>
+    <blockquote>Study what the strongest titles have in common: the shape of the tension they promise, how concrete the situation is, whose behaviour is being explained. Carry that instinct into this script. Do not copy phrasing, reuse a hook, or rewrite an existing topic.</blockquote>
+    <div class="two">
+      <div class="panel">
+        <h3>What the app can see</h3>
+        <p>Per video: title, description, publish date, duration, views, likes, comments, privacy. Per channel: subscribers, video count, total views.</p>
+      </div>
+      <div class="panel">
+        <h3>What it cannot see</h3>
+        <p>Retention curves, average view duration, swipe-away rate, impressions, click-through rate, traffic sources, demographics. These need the YouTube Analytics API, which is not connected yet.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="architecture">
+    <div class="section-head"><span class="kicker">Under the hood</span><h2>Architecture</h2></div>
+    <pre class="mermaid">
+flowchart LR
+  subgraph Phone["Android phone: The Mind Files Studio"]
+    UI["Screens: Topic Bank, Generate, Storyboard, Voice, Assembly, Thumbnail, Publish, Library"]
+    Store["On-device store: projects, topics, settings"]
+    Keys["Android keystore: API keys"]
+    Render["FFmpeg + Skia: edit, captions, thumbnail"]
+  end
+  Gemini["Gemini: scripts, stills"]
+  Claude["Claude: scripts"]
+  Eleven["ElevenLabs: voice"]
+  Flow["Google Flow: video clips (manual)"]
+  YT["YouTube: upload + stats"]
+  UI --> Gemini
+  UI --> Claude
+  UI --> Eleven
+  UI -. copy prompt / import clip .-> Flow
+  UI --> YT
+  UI --- Store
+  UI --- Keys
+  UI --- Render
+    </pre>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Piece</th><th>What it is</th></tr></thead>
+        <tbody>
+          <tr><td>App</td><td>React Native (Expo) for Android. Single user.</td></tr>
+          <tr><td>Scripts</td><td>Gemini (default <span class="mono">gemini-flash-latest</span>) or Claude (default Opus 5), switchable in Settings. Output is schema-checked. On rate limits or spent quotas it tries other models, then the other provider if its key is set, and shows what happened on each model if all fail.</td></tr>
+          <tr><td>Data</td><td>Projects, topic bank and settings are saved on the phone. API keys live in the Android keystore. Media files sit in a per-project folder.</td></tr>
+          <tr><td>Rendering</td><td>FFmpeg runs on the phone. Skia draws caption frames, thumbnails and prepares the mascot images.</td></tr>
+          <tr><td>Cost guards</td><td>Voice spend is checked before every request and identical text is cached, so it is never billed twice. Double taps can't trigger duplicate paid requests or uploads.</td></tr>
+          <tr><td>Quality checks</td><td>338 automated tests, plus a dry run that renders a real Short and a real deep dive through FFmpeg before each release and checks every shot lands at the right time.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="limits">
+    <div class="section-head"><span class="kicker">Constraints</span><h2>Costs and limits that shape output</h2></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Resource</th><th>Limit today</th><th>What it means</th></tr></thead>
+        <tbody>
+          <tr><td>ElevenLabs voice</td><td class="num">10,000 chars/month (stops at 9,000)</td><td>About 20–25 Shorts a month, or 2 deep dives. The biggest cap on volume.</td></tr>
+          <tr><td>Google Flow clips</td><td>Paid credits per clip</td><td>Why Shorts use 3 clips plus stills rather than all clips.</td></tr>
+          <tr><td>Gemini free tier</td><td>Small daily quota per model</td><td>Heavy days can exhaust it; the app falls back to other models or Claude.</td></tr>
+          <tr><td>Gemini image models</td><td>Not in the free tier on the current key</td><td>Stills are made in Flow and imported.</td></tr>
+          <tr><td>Phone rendering</td><td>Draft 720p by default</td><td>Full 1080p renders take longer and heat the phone.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="levers">
+    <div class="section-head"><span class="kicker">Who can change what</span><h2>Levers</h2></div>
+    <div class="two">
+      <div class="panel">
+        <h3>In the app, no engineering</h3>
+        <ul class="rules">
+          <li>Script provider and model</li>
+          <li>Clips per Short (Flow budget)</li>
+          <li>Narrator voice</li>
+          <li>Performance feedback on or off</li>
+          <li>Captions, mascot, draft or full quality</li>
+          <li>Default privacy</li>
+          <li>Per video: title, description, tags, thumbnail headline and badge, Short structure (one or three tactics)</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>Needs a code change</h3>
+        <ul class="rules">
+          <li>Brand bible: tone, laws, character rules</li>
+          <li>Word counts, beat structure, shot rules</li>
+          <li>Categories and priority tactics</li>
+          <li>Title rules</li>
+          <li>Caption style, mascot placement and timing</li>
+          <li>Thumbnail layout</li>
+          <li>Feedback thresholds (2 days, 4 videos, top/bottom 5)</li>
+          <li>Adding YouTube Analytics, music, scheduling</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="gaps">
+    <div class="section-head"><span class="kicker">For the strategist</span><h2>Open opportunities</h2></div>
+    <p>Things the app does not do today. These are observations, not recommendations; each is buildable if the strategy calls for it.</p>
+    <div class="gaps">
+      <div class="gap"><h3>It optimises for views, not retention or click-through</h3><p>Retention and CTR explain Shorts performance far better than raw views. Adding the YouTube Analytics API means one extra sign-in permission and a moderate build.</p></div>
+      <div class="gap"><h3>Titles have almost no rules</h3><p>Only a length cap. There is no title formula, no variant testing, and the feedback loop only learns from titles.</p></div>
+      <div class="gap"><h3>No music or sound design</h3><p>Videos carry narration only. No background bed, stingers or sound effects.</p></div>
+      <div class="gap"><h3>No posting schedule</h3><p>Uploads go out when the button is pressed. There is no scheduled publish time or cadence plan.</p></div>
+      <div class="gap"><h3>No loop or call to action</h3><p>The Short ends on the reframe line. Endings aren't written to loop back into the hook, and there is no follow, comment or series prompt in the video, description or a pinned comment.</p></div>
+      <div class="gap"><h3>Hoot is on screen for the entire Short</h3><p>Bottom-left, always visible. His role in hook strength and retention hasn't been measured.</p></div>
+      <div class="gap"><h3>Priority tactics are fixed</h3><p>The five priority tactics were set in an earlier round and don't update from results.</p></div>
+      <div class="gap"><h3>Output volume is capped by voice credits</h3><p>About 20–25 Shorts a month on the ElevenLabs free tier. Posting more often means a paid voice plan.</p></div>
+    </div>
+  </section>
+
+  <section id="requests">
+    <div class="section-head"><span class="kicker">Next step</span><h2>How to send changes back</h2></div>
+    <p>Write each change as its own numbered request. Be concrete: "punchier hooks" can't be built; "hooks must name a specific relationship in the first 6 words" can.</p>
+    <pre class="template">### CR-8 — &lt;short title&gt;
+What:     &lt;the change, specifically&gt;
+Where:    &lt;brand bible / short format / deep dive / topics /
+           titles / captions / mascot / thumbnail / publishing /
+           feedback loop / other&gt;
+Why:      &lt;reasoning and any evidence&gt;
+Priority: &lt;high / medium / low&gt;</pre>
+    <p class="muted">Earlier rounds shipped CR-1 to CR-4, CR-6 and CR-7 (name the tactic, point at the viewer, priority tactics, the three-tactics variant, underperformers as an avoid signal, visual dynamism). CR-5, YouTube Analytics, is still open.</p>
+  </section>
+
+  <footer>Everything above describes The Mind Files Studio v2.9.0 (build 24) as built. Numbers come from the app's own rules, not estimates, except the monthly Short count, which assumes about 390 characters per Short.</footer>
+</div>
+
+<!--claude-mermaid-runtime-begin:3477-->
+<style>.mermaid-diagram{margin-block:4px}.mermaid-diagram svg{display:block;margin:0 auto;max-width:100%;height:auto}</style>
+<script src="/_runtime/mermaid-11.16.1.min.js"></script>
+<script>(function(){
+var CFG={"palettes":{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},"dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}};
+if(typeof mermaid==='undefined')return;
+var pres=Array.prototype.slice.call(document.querySelectorAll('pre.mermaid')).filter(function(p){if(p.hasAttribute('data-claude-mermaid-claimed'))return false;p.setAttribute('data-claude-mermaid-claimed','1');return true;});
+if(!pres.length)return;
+var mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+var root=document.documentElement;
+var items=pres.map(function(pre){
+var mount=document.createElement('div');mount.className='mermaid-diagram';
+return {pre:pre,mount:mount,src:pre.textContent||''};
+});
+var seq=0;
+var renderGen=0;
+var lastKey='';
+function pageBg(fallback){
+var els=[document.body,document.documentElement];
+for(var i=0;i<els.length;i++){
+var c=els[i]&&getComputedStyle(els[i]).backgroundColor;
+if(c&&c!=='transparent'&&c!=='rgba(0, 0, 0, 0)')return c;
+}
+return fallback;
+}
+function render(){
+var theme=root.getAttribute('data-theme');
+var dark=theme==='dark'||(!!(mq&&mq.matches)&&theme!=='light');
+var pal=dark?CFG.palettes.dark:CFG.palettes.light;
+var bg=pageBg(pal.bg);
+var key=(dark?'d':'l')+'|'+bg;
+if(key===lastKey)return;
+lastKey=key;
+var gen=++renderGen;
+var font=getComputedStyle(document.body).fontFamily||'sans-serif';
+var nat={useMaxWidth:false};
+mermaid.initialize({
+startOnLoad:false,securityLevel:'strict',theme:'base',
+flowchart:nat,sequence:nat,er:nat,state:nat,class:nat,pie:nat,
+gantt:nat,journey:nat,timeline:nat,gitGraph:nat,mindmap:nat,xyChart:nat,
+quadrantChart:nat,sankey:nat,c4:nat,requirement:nat,block:nat,
+packet:nat,kanban:nat,architecture:nat,radar:nat,
+themeVariables:{background:bg,mainBkg:pal.surface,primaryColor:pal.surface,
+primaryTextColor:pal.text,lineColor:pal.line,primaryBorderColor:pal.border,
+nodeBorder:pal.border,clusterBorder:pal.border,edgeLabelBackground:bg,
+clusterBkg:'rgba(127,127,127,0.07)',titleColor:pal.text,
+darkMode:dark,rowOdd:bg,rowEven:'rgba(127,127,127,0.07)',
+attributeBackgroundColorOdd:bg,attributeBackgroundColorEven:'rgba(127,127,127,0.07)',
+fontSize:'16px',fontFamily:font},
+themeCSS:'.node rect, .node circle, .node polygon, .node path, .cluster rect { stroke-width: 2px; }'
+});
+items.forEach(function(it){
+var id='claude-mermaid-'+seq++;
+mermaid.render(id,it.src).then(function(r){
+if(gen!==renderGen)return;
+var prev=it.pre.previousElementSibling;
+if(prev&&prev.className==='mermaid-diagram'&&prev!==it.mount)return;
+it.mount.innerHTML=r.svg;
+if(!it.mount.parentNode)it.pre.parentNode.insertBefore(it.mount,it.pre);
+it.pre.style.display='none';
+},function(){
+var scratch=document.getElementById(id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+scratch=document.getElementById('d'+id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+if(gen!==renderGen)return;
+if(it.mount.parentNode)it.mount.parentNode.removeChild(it.mount);
+it.pre.style.display='';
+});
+});
+}
+render();
+if(mq&&mq.addEventListener)mq.addEventListener('change',render);
+if(typeof MutationObserver!=='undefined')new MutationObserver(render).observe(root,{attributes:true,attributeFilter:['data-theme']});
+})();</script>
+<!--claude-mermaid-runtime-end-->
+
+</body></html>
