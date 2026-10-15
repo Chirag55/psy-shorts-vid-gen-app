@@ -1,3 +1,4 @@
+import type { Shot } from './shots';
 /** Domain model shared across the generation → assembly → publish pipeline. */
 
 export type Mode = 'short' | 'long';
@@ -37,8 +38,11 @@ export interface ShortBeat {
   kind: BeatKind;
   /** The spoken line for this beat. */
   text: string;
-  /** Veo prompt for the ~10s continuous hero clip covering this beat. */
-  clipPrompt: string;
+  /** Veo prompt for the ~10s continuous hero clip covering this beat (legacy, pre shot lists). */
+  clipPrompt?: string;
+  /** On-screen card for this beat ("1. THEY MIRROR YOU"). */
+  cardText?: string;
+  shots?: Shot[];
 }
 
 export interface ShortScript {
@@ -58,7 +62,11 @@ export interface ShortScript {
   hookCard?: string;
   loopBridge?: string;
   ctaQuestion?: string;
-  stimulus?: { card?: unknown; description?: string } | null;
+  stimulus?: { card?: StimulusCard; description?: string; holdSeconds?: number } | null;
+  titleOptions?: string[];
+  tagLine?: string;
+  /** Who found the effect and when; goes in the description, never spoken. */
+  sourceLine?: string;
   hookLine: string;
   beats: ShortBeat[];
   /** Wardrobe + setting, restated in clips 2 and 3 to hold continuity. */
@@ -72,6 +80,9 @@ export interface LongScript {
   title: string;
   structure?: string;
   wordTarget?: number;
+  bankEntryId?: string;
+  ctaQuestion?: string;
+  tactics?: string[];
   coldOpen: string;
   chapters: Chapter[];
   closingSynthesis: string;
@@ -140,4 +151,19 @@ export interface TopicBankEntry {
   category: string;
   used: boolean;
   usedAt?: number;
+}
+
+export interface StimulusItem {
+  text: string;
+  color: string;
+  size: 's' | 'm' | 'l' | 'xl';
+  x: number;
+  y: number;
+}
+
+/** A test Short's stimulus, laid out for the app to draw on a 9:16 card. */
+export interface StimulusCard {
+  background: string;
+  frame: 'triangle' | 'box' | 'none';
+  items: StimulusItem[];
 }

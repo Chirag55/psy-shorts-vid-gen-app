@@ -100,7 +100,7 @@ export default function StoryboardScreen() {
               <View style={{ marginTop: space.sm }}>
                 <PromptCard
                   label={`CLIP ${i + 1} — ${i === 0 ? 'ESTABLISH' : 'CONTINUATION'}`}
-                  prompt={beat.clipPrompt}
+                  prompt={beat.clipPrompt ?? ""}
                   status={clipStatus(`short_${i}`)}
                   onImport={() => importClip(`short_${i}`)}
                 />

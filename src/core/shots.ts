@@ -31,9 +31,9 @@ export interface Shot {
   clipPrompt?: string;
   stillPrompt?: string;
   /** Re-uses another shot's asset (its key) instead of generating a new one. */
-  reuse?: string;
+  reuse?: number;
   /** Which beat a shot belongs to when it was planned outside a beat. */
-  beat?: string;
+  beat?: number;
   /** Continues the previous shot's asset: the render joins them into one hold. */
   continues?: boolean;
   [extra: string]: unknown;
@@ -71,11 +71,11 @@ export function flattenShots(script: { beats: BeatWithShots[] }): FlatShot[] {
   return out;
 }
 
-export function assetKeyFor(key: string, shot: Shot): string {
+export function assetKeyFor(key: string | number, shot: Shot): string {
   return `short_${shot.reuse ?? key}`;
 }
 
-export function clipKeyFor(key: string): string {
+export function clipKeyFor(key: string | number): string {
   return `short_${key}`;
 }
 

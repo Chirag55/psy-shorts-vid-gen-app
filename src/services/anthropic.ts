@@ -121,7 +121,7 @@ export async function generateShortScript(
     characterDescription: raw.characterDescription,
     archetype: raw.archetype,
     hashtags: raw.hashtags ?? [],
-    beats: raw.beats.map((b) => ({ ...b, clipPrompt: withStyleLock(stripMascotFromPrompt(b.clipPrompt)) })),
+    beats: raw.beats.map((b) => ({ ...b, clipPrompt: withStyleLock(stripMascotFromPrompt((b as any).clipPrompt ?? "")) })),
   };
 }
 
