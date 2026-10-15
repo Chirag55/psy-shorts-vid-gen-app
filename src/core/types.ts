@@ -31,7 +31,7 @@ export interface Chapter {
   kenBurns: KenBurnsMove;
 }
 
-export type KenBurnsMove = 'zoom_in' | 'zoom_out' | 'pan_left' | 'pan_right';
+export type KenBurnsMove = 'zoom_in' | 'zoom_out' | 'pan_left' | 'pan_right' | 'tilt_up' | 'tilt_down';
 
 export interface ShortBeat {
   kind: BeatKind;
@@ -78,6 +78,8 @@ export interface AssetState {
   /** Rendered per-chapter MP4 segments. */
   segments: Record<string, string>;
   finalVideo?: string;
+  /** How the final video was rendered (sizes, durations, warnings). */
+  renderInfo?: Record<string, unknown>;
   thumbnail?: string;
   youtubeVideoId?: string;
 }
@@ -101,6 +103,11 @@ export interface Project {
   /** Voice id used for synthesis, so a re-synth stays consistent. */
   voiceId: string;
   publish: PublishMeta;
+  /** The topic-bank entry this project was made from (e.g. "D69"). */
+  bankEntryId?: string;
+  review?: Record<string, unknown>;
+  /** Set when a new bank discarded this project's stale voice and render. */
+  bankReset?: { at: number };
 }
 
 export interface PublishMeta {

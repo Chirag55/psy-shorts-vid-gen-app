@@ -44,7 +44,9 @@ def simplify(text):
             # the use must not itself be a plain reassignment of reg (that would make the store dead)
             mu = ASSIGN.match(l)
             if mu and mu.group(2) == reg and tokens_of(mu.group(3), reg) == 0:
-                dead.add(i); changed = True; i += 1; continue
+                if '(' not in expr and 'new ' not in expr:
+                    dead.add(i); changed = True
+                i += 1; continue
             if tokens_of(l, reg) != 1:
                 i += 1; continue
             # after the use, reg must be reassigned (without reading) before the segment ends

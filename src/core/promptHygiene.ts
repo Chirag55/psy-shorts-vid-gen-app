@@ -22,26 +22,22 @@ export function mentionsMascot(prompt: string): boolean {
   return MASCOT_PATTERN.test(prompt);
 }
 
+/** Drops the comma-separated descriptors that stage the mascot, sentence by sentence, keeping each sentence's end mark. */
+function stripSentence(sentence: string): string {
+  const end = /[.!?;]$/.exec(sentence.trim())?.[0] ?? '';
+  const body = end ? sentence.trim().slice(0, -1) : sentence.trim();
+  const kept = body.split(',').map((c) => c.trim()).filter((c) => c && !MASCOT_PATTERN.test(c));
+  return kept.length ? `${kept.join(', ')}${end}` : '';
+}
+
 /**
- * Removes clauses that stage the mascot.
- *
- * Works clause by clause rather than on the whole string: a prompt is a list of
- * comma-separated descriptors, so dropping just the offending one keeps the rest
- * of the scene — and the style lock — intact.
+ * Removes clauses that stage the mascot. If every clause mentioned it, the
+ * original is returned: a visibly wrong clip beats a prompt that makes nothing.
  */
 export function stripMascotFromPrompt(prompt: string): string {
-  if (!mentionsMascot(prompt)) return prompt;
-
-  const kept = prompt
-    .split(',')
-    .filter((clause) => !MASCOT_PATTERN.test(clause))
-    .map((clause) => clause.trim())
-    .filter(Boolean);
-
-  // If every clause mentioned the mascot there is nothing meaningful left, so
-  // return the original rather than an empty prompt — a visibly wrong clip is
-  // better than a prompt that generates nothing.
-  return kept.length ? kept.join(', ') : prompt;
+  if (!MASCOT_PATTERN.test(prompt)) return prompt;
+  const kept = prompt.split(/(?<=[.!?;])\s+/).map(stripSentence).filter(Boolean);
+  return kept.length ? kept.join(' ') : prompt;
 }
 
 export interface PromptAudit {

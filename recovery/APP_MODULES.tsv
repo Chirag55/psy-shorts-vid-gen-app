@@ -196,3 +196,5 @@ module	pseudo_lines	target	functions
 1799	739	services/crashInfo.ts	nativeModule,recentExits,lastAbnormalExit,describeExit,isAvailable,lastJavaCrash
 1800	616	services/backgroundChecks.ts	hydrated,registerBackgroundChecks
 1806	803	services/funnelUpdates.ts	doUpdates,_loop,runFunnelUpdates
+598	640	App.tsx	App
+821	533	navigation/index.tsx	navigation

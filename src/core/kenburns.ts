@@ -11,21 +11,32 @@ import type { KenBurnsMove } from './types';
 
 const FPS = 24;
 
-export function kenBurnsFilter(move: KenBurnsMove, durationSeconds: number, width: number, height: number): string {
-  const frames = Math.max(1, Math.round(durationSeconds * FPS));
+/** Fills the frame first (scale up + centre crop), then animates; the six moves include vertical tilts. */
+export function kenBurnsFilter(move: KenBurnsMove, durationSeconds: number, width: number, height: number, fps: number = FPS): string {
+  const frames = Math.max(1, Math.round(durationSeconds * fps));
   const size = `${width}x${height}`;
+  const fill = `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1`;
   const centre = `x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'`;
-
   switch (move) {
     case 'zoom_in':
-      return `zoompan=z='min(zoom+0.0015,1.25)':d=${frames}:${centre}:s=${size}:fps=${FPS}`;
+      return `${fill},zoompan=z='min(zoom+0.0015,1.25)':d=${frames}:${centre}:s=${size}:fps=${fps}`;
     case 'zoom_out':
-      return `zoompan=z='max(1.25-0.0015*on,1.0)':d=${frames}:${centre}:s=${size}:fps=${FPS}`;
+      return `${fill},zoompan=z='max(1.25-0.0015*on,1.0)':d=${frames}:${centre}:s=${size}:fps=${fps}`;
     case 'pan_right':
-      return `zoompan=z=1.15:x='if(lte(on,1),0,min(x+1.5,iw-iw/zoom))':y='ih/2-(ih/zoom/2)':d=${frames}:s=${size}:fps=${FPS}`;
+      return `${fill},zoompan=z=1.15:x='if(lte(on,1),0,min(x+1.5,iw-iw/zoom))':y='ih/2-(ih/zoom/2)':d=${frames}:s=${size}:fps=${fps}`;
     case 'pan_left':
-      return `zoompan=z=1.15:x='if(lte(on,1),iw-iw/zoom,max(x-1.5,0))':y='ih/2-(ih/zoom/2)':d=${frames}:s=${size}:fps=${FPS}`;
+      return `${fill},zoompan=z=1.15:x='if(lte(on,1),iw-iw/zoom,max(x-1.5,0))':y='ih/2-(ih/zoom/2)':d=${frames}:s=${size}:fps=${fps}`;
+    case 'tilt_up':
+      return `${fill},zoompan=z=1.15:x='iw/2-(iw/zoom/2)':y='if(lte(on,1),ih-ih/zoom,max(y-1.5,0))':d=${frames}:s=${size}:fps=${fps}`;
+    case 'tilt_down':
+      return `${fill},zoompan=z=1.15:x='iw/2-(iw/zoom/2)':y='if(lte(on,1),0,min(y+1.5,ih-ih/zoom))':d=${frames}:s=${size}:fps=${fps}`;
   }
+  return undefined as unknown as string;
+}
+
+/** A still is fed to ffmpeg as a single image; zoompan generates the frames. */
+export function stillInputArgs(path: string): string[] {
+  return ['-i', path];
 }
 
 /**
