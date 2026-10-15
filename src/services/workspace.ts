@@ -51,12 +51,35 @@ export function writeBase64(file: File, base64: string): File {
   return file;
 }
 
-/** Copies an imported clip into the workspace so it survives the picker's cache being cleared. */
+/**
+ * Copies an imported file into the workspace so it survives the picker's cache
+ * being cleared. Each import gets a unique name (`stem_<ms>.ext`) so players and
+ * image caches never show a stale copy; older copies of the same stem are removed.
+ */
 export async function importInto(bucket: Bucket, slug: string, sourceUri: string, name: string): Promise<string> {
   const source = new File(sourceUri);
-  const target = new File(bucketDir(bucket, slug), name);
-  if (target.exists) target.delete();
+  const dir = bucketDir(bucket, slug);
+  const dot = name.lastIndexOf('.');
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : '';
+  const sameStem = new RegExp(`^${stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:_\\d{10,})?\\.[A-Za-z0-9]+$`);
+  const target = new File(dir, `${stem}_${Date.now()}${ext}`);
   await source.copy(target);
+  try {
+    if (dir.exists) {
+      for (const entry of dir.list()) {
+        if (entry instanceof File && entry.uri !== target.uri && sameStem.test(entry.name)) {
+          try {
+            entry.delete();
+          } catch {
+            // An older copy that cannot be removed is harmless.
+          }
+        }
+      }
+    }
+  } catch {
+    // Cleanup is best-effort.
+  }
   return target.uri;
 }
 
