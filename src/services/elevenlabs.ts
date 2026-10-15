@@ -87,6 +87,8 @@ interface SynthesiseOptions {
   /** Chapter key: '0' cold open, '1'..'n' chapters, '99' outro, 'short' for a short. */
   key: string;
   modelId?: string;
+  /** Voice speed (ElevenLabs voice_settings.speed); 1 is the default pace. */
+  speed?: number;
   signal?: AbortSignal;
 }
 
@@ -98,7 +100,7 @@ interface SynthesiseOptions {
  */
 export async function synthesiseChapter(opts: SynthesiseOptions): Promise<SynthesisResult> {
   const modelId = opts.modelId ?? 'eleven_multilingual_v2';
-  const key = await audioCache.cacheKey({ text: opts.text, voiceId: opts.voiceId, modelId });
+  const key = await audioCache.cacheKey({ text: opts.text, voiceId: opts.voiceId, modelId, speed: opts.speed });
 
   // Identical text in the same voice was already paid for once. Serve it from
   // disk rather than billing again.
@@ -134,6 +136,7 @@ export async function synthesiseChapter(opts: SynthesiseOptions): Promise<Synthe
         similarity_boost: 0.75,
         style: 0.0,
         use_speaker_boost: true,
+        ...(opts.speed && opts.speed !== 1 ? { speed: opts.speed } : {}),
       },
     }),
   });
