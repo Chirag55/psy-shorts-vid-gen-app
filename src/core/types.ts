@@ -150,6 +150,18 @@ export interface Project {
   originalityOverride?: { reason: string; at: string };
   /** Set when a new bank discarded this project's stale voice and render. */
   bankReset?: { at: number };
+  /** Style profile and render options the Short was made with. */
+  style?: { profile?: 'P' | 'C'; captionMode?: string; music?: string; endingMode?: string; [key: string]: any };
+  /** Flow credit ledger: clip tries and clips swapped for stills. */
+  flow?: { tries: Record<string, number>; stills: string[] };
+  /** Virality audits and post-publish snapshots. */
+  virality?: { snapshots?: { h48?: any; d7?: any }; hookShell?: string; [key: string]: any };
+  /** YouTube Studio's stayed-to-watch figure, entered by hand. */
+  stayedToWatch?: { percent: number; at: string };
+  /** Which hook the Short went out with in the A/B test. */
+  hookVariant?: string;
+  /** Fields added after 1.9 that screens read without a declared shape. */
+  [key: string]: any;
 }
 
 export interface PublishMeta {

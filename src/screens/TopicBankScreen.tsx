@@ -6,7 +6,7 @@ import { Badge, Body, Button, Card, Empty, Field, H2, Row, Screen, Segmented, Sm
 import { colors, radius, space } from '@/theme';
 import { useStudio } from '@/store';
 import { generateTopicIdeas } from '@/services/scriptProvider';
-import { fetchPerformanceContext } from '@/services/performance';
+import { fetchPerformanceContext } from '@/services/performanceContext';
 import type { RootStackParamList } from '@/navigation/types';
 import type { Mode } from '@/core/types';
 

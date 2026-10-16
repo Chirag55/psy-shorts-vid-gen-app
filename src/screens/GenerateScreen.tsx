@@ -6,7 +6,7 @@ import { Body, Button, Card, Field, H2, Row, Screen, Segmented, Small } from '@/
 import { colors, space } from '@/theme';
 import { useStudio } from '@/store';
 import { generateLongScript, generateShortScript, type ShortStructure } from '@/services/scriptProvider';
-import { fetchPerformanceContext } from '@/services/performance';
+import { fetchPerformanceContext } from '@/services/performanceContext';
 import { validateScript } from '@/core/guardrails';
 import type { RootStackParamList } from '@/navigation/types';
 import { useMounted } from '@/util/useMounted';
