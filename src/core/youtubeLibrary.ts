@@ -19,6 +19,12 @@ export interface UploadedVideo {
   privacyStatus: string;
   /** When a private upload is set to go public (status.publishAt). */
   scheduledFor?: string;
+  tags?: string[];
+  uploadStatus?: string;
+  failureReason?: string;
+  rejectionReason?: string;
+  processingStatus?: string;
+  regionRestricted?: boolean;
 }
 
 /** Whether a video is private now and set to go public later. */
