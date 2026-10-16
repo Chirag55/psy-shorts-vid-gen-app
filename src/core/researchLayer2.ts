@@ -86,10 +86,10 @@ export function layer2Reason(l: Layer2Label): string {
  */
 export async function runLayer2(
   items: Layer2Item[],
-  cache: Layer2Cache,
   classify: (batch: Layer2Item[]) => Promise<Map<string, Layer2Label>>,
-  onProgress?: (done: number, total: number) => void,
+  cache: Layer2Cache,
   now: Date = new Date(),
+  onProgress?: (done: number, total: number) => void,
 ): Promise<Layer2Result> {
   const labels: Record<string, Layer2Label> = {};
   const fresh: Layer2Cache = {};
