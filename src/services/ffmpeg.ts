@@ -1,4 +1,13 @@
 import type { FFmpegSession, Log } from '@wokcito/ffmpeg-kit-react-native';
+import { leadingSilenceFromLog } from '@/core/hooks';
+import { silencesFromLog } from '@/core/virality';
+import {
+  integratedFromEbur128,
+  loudnormMeasureArgs,
+  parseLoudnorm,
+  type LoudnormMeasure,
+} from '@/core/renderRules';
+import { ffmpegReason } from '@/core/ffmpegReason';
 import { toFsPath } from './workspace';
 
 /**
@@ -58,6 +67,12 @@ export class FFmpegError extends Error {
 }
 
 export type LogSink = (lines: string[]) => void;
+
+/** The exit code plus the most telling log line, when there is one. */
+function failureMessage(code: unknown, logs: string): string {
+  const reason = ffmpegReason(logs);
+  return reason ? `FFmpeg exited with code ${code}: ${reason}` : `FFmpeg exited with code ${code}.`;
+}
 
 /** How often buffered log lines are handed to the UI. */
 const LOG_FLUSH_MS = 300;
@@ -133,7 +148,7 @@ export async function run(args: string[], options: RunOptions = {}): Promise<voi
     if (!ReturnCode.isSuccess(returnCode)) {
       const logs = await session.getAllLogsAsString(2000).catch(() => buffer.join('\n'));
       throw new FFmpegError(
-        ReturnCode.isCancel(returnCode) ? 'Render cancelled.' : `FFmpeg exited with code ${returnCode.getValue()}.`,
+        ReturnCode.isCancel(returnCode) ? 'Render cancelled.' : failureMessage(returnCode.getValue(), logs),
         logs
       );
     }
@@ -161,5 +176,99 @@ export async function probeDuration(uri: string): Promise<number> {
     return Number.isFinite(value) && value > 0 ? value : 0;
   } catch {
     return 0;
+  }
+}
+
+/** Seconds of silence before the first sound, or 0. */
+export async function detectLeadingSilence(uri: string, noiseDb: number): Promise<number> {
+  const log: string[] = [];
+  try {
+    await run(
+      ['-hide_banner', '-nostats', '-i', toFsPath(uri), '-af', `silencedetect=noise=${noiseDb}dB:d=0.02`, '-f', 'null', '-'],
+      { onLog: (lines) => log.push(...lines) }
+    );
+    return leadingSilenceFromLog(log);
+  } catch {
+    return 0;
+  }
+}
+
+/** Every silence at least `minSeconds` long, or null when the scan fails. */
+export async function detectSilences(
+  uri: string,
+  noiseDb: number,
+  minSeconds: number
+): Promise<{ start: number; end: number }[] | null> {
+  const log: string[] = [];
+  try {
+    await run(
+      [
+        '-hide_banner',
+        '-nostats',
+        '-i',
+        toFsPath(uri),
+        '-af',
+        `silencedetect=noise=${noiseDb}dB:d=${minSeconds}`,
+        '-f',
+        'null',
+        '-',
+      ],
+      { onLog: (lines) => log.push(...lines) }
+    );
+    return silencesFromLog(log);
+  } catch {
+    return null;
+  }
+}
+
+/** The loudnorm first-pass measurement, or undefined when it fails. */
+export async function measureLoudness(uri: string): Promise<LoudnormMeasure | undefined> {
+  const log: string[] = [];
+  try {
+    await run(loudnormMeasureArgs(toFsPath(uri)), { onLog: (lines) => log.push(...lines) });
+    return parseLoudnorm(log);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Integrated loudness in LUFS by EBU R128, or undefined when it fails. */
+export async function measureIntegratedLoudness(uri: string): Promise<number | undefined> {
+  const log: string[] = [];
+  try {
+    await run(['-hide_banner', '-nostats', '-i', toFsPath(uri), '-af', 'ebur128=peak=true', '-f', 'null', '-'], {
+      onLog: (lines) => log.push(...lines),
+    });
+    return integratedFromEbur128(log);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Width and height of the first video stream; null when unreadable. */
+export async function probeSize(uri: string): Promise<{ width: number; height: number } | null | undefined> {
+  try {
+    const session = await kit().FFprobeKit.executeWithArguments([
+      '-v', 'error',
+      '-select_streams', 'v:0',
+      '-show_entries', 'stream=width,height',
+      '-of', 'csv=p=0:s=x',
+      toFsPath(uri),
+    ]);
+    const output = (await session.getOutput()) ?? '';
+    const m = /(\d+)x(\d+)/.exec(output.trim());
+    return m ? { width: Number(m[1]), height: Number(m[2]) } : null;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Saves the frame at `seconds` as an image; false when FFmpeg fails. */
+export async function extractFrame(input: string, seconds: number, output: string): Promise<boolean> {
+  try {
+    await run(['-y', '-ss', seconds.toFixed(3), '-i', toFsPath(input), '-frames:v', '1', toFsPath(output)]);
+    return true;
+  } catch {
+    return false;
   }
 }
