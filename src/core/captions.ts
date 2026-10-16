@@ -20,6 +20,14 @@ export interface CaptionToken {
   active: boolean;
 }
 
+/** Single-word captions highlight only words at least this long. */
+export const HIGHLIGHT_MIN_LENGTH = 7;
+
+/** Long words carry the highlight; short ones stay plain so it means something. */
+export function shouldHighlight(word: string): boolean {
+  return word.replace(/[^\p{L}\p{N}]/gu, '').length >= HIGHLIGHT_MIN_LENGTH;
+}
+
 export interface CaptionFrame {
   tokens: CaptionToken[];
   start: number;
@@ -48,6 +56,8 @@ export interface CaptionOptions {
   highlightActiveWord?: boolean;
   /** Frames shorter than this are merged forward — sub-frame flashes just strobe. */
   minFrameDuration?: number;
+  /** In single-word mode, how long a word may stay up past its own end through a pause. */
+  maxHoldSeconds?: number;
 }
 
 /**
@@ -67,11 +77,17 @@ export function buildCaptionFrames(words: WordTiming[], opts: CaptionOptions = {
   // One word per frame, each held until the next begins so there is never a
   // blank gap mid-sentence.
   if (opts.singleWord) {
-    const single = words.map((word, i) => ({
-      tokens: [{ text: word.word, active: true }],
-      start: word.start,
-      end: i + 1 < words.length ? words[i + 1].start : word.end,
-    }));
+    const single = words.map((word, i) => {
+      const next = i + 1 < words.length ? words[i + 1].start : word.end;
+      return {
+        tokens: [{ text: word.word, active: shouldHighlight(word.word) }],
+        start: word.start,
+        end:
+          opts.maxHoldSeconds !== undefined
+            ? Math.min(next, Math.max(word.end, word.start) + opts.maxHoldSeconds)
+            : next,
+      };
+    });
     return fillGaps(mergeShortFrames(single, minDuration));
   }
 
