@@ -1,4 +1,4 @@
-import { buildPerformanceContext, summarisePerformance } from '@/core/performanceContext';
+import { buildPerformanceContext, summarisePerformance } from '@/core/performance';
 import { getKey, setKey } from './keys';
 import {
   ensureFreshToken,

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPerformanceContext, summarisePerformance } from '../performanceContext';
+import { buildPerformanceContext, summarisePerformance } from '../performance';
 import type { UploadedVideo } from '../youtubeLibrary';
 
 const NOW = new Date('2026-09-15T12:00:00Z');
@@ -93,6 +93,6 @@ describe('buildPerformanceContext', () => {
   });
 
   it('returns empty for an empty summary', () => {
-    assert.equal(buildPerformanceContext({ sampleSize: 0, medianViews: 0, topPerformers: [], weakPerformers: [] }), '');
+    assert.equal(buildPerformanceContext({ sampleSize: 0, medianViews: 0, topPerformers: [], weakPerformers: [], outliers: [], hookDropOffs: [], analytics: {} }), '');
   });
 });
