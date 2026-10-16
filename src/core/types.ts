@@ -112,6 +112,8 @@ export interface AssetState {
   youtubeVideoId?: string;
   /** When the video went live (ms), for the similarity window. */
   publishedAt?: number;
+  /** The scheduled publish time (ISO), when the upload is private until then. */
+  scheduledFor?: string;
 }
 
 export interface WordTiming {
