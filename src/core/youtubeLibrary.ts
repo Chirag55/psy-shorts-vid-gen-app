@@ -17,6 +17,13 @@ export interface UploadedVideo {
   likeCount: number;
   commentCount: number;
   privacyStatus: string;
+  /** When a private upload is set to go public (status.publishAt). */
+  scheduledFor?: string;
+}
+
+/** Whether a video is private now and set to go public later. */
+export function isScheduled(video: Pick<UploadedVideo, 'scheduledFor' | 'privacyStatus'>, now: Date = new Date()): boolean {
+  return Boolean(video.scheduledFor) && video.privacyStatus !== 'public' && new Date(video.scheduledFor!) > now;
 }
 
 /**
