@@ -110,12 +110,20 @@ export interface AssetState {
   renderInfo?: Record<string, unknown>;
   thumbnail?: string;
   youtubeVideoId?: string;
+  /** When the video went live (ms), for the similarity window. */
+  publishedAt?: number;
 }
 
 export interface WordTiming {
   word: string;
   start: number;
   end: number;
+}
+
+export interface ReviewStamp {
+  scriptHash: string;
+  reviewer: string;
+  at: string;
 }
 
 export interface Project {
@@ -133,7 +141,11 @@ export interface Project {
   publish: PublishMeta;
   /** The topic-bank entry this project was made from (e.g. "D69"). */
   bankEntryId?: string;
-  review?: Record<string, unknown>;
+  review?: ReviewStamp;
+  /** The source cited when the project was not made from the bank. */
+  source?: string;
+  /** Published despite a near-copy title, with the reason given. */
+  originalityOverride?: { reason: string; at: string };
   /** Set when a new bank discarded this project's stale voice and render. */
   bankReset?: { at: number };
 }
