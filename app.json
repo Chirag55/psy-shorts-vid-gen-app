@@ -60,7 +60,8 @@
       ],
       "./plugins/withFFmpegKit.js",
       "./plugins/withPrivacyHardening.js",
-      "./plugins/withCrashInfo.js"
+      "./plugins/withCrashInfo.js",
+      "expo-background-task"
     ],
     "extra": {
       "eas": {
