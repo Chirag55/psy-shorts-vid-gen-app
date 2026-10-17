@@ -11,7 +11,7 @@ export type RootStackParamList = {
   Publish: { id: string };
   TopicBank: undefined;
   Ypp: undefined;
-  SeoAudit: undefined;
+  SeoAudit: { videoId: string; short: boolean };
   MetadataUpdate: undefined;
 };
 
