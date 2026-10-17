@@ -18,7 +18,7 @@ export interface StillJob {
   prompt: string;
 }
 
-export type StillQueueStatus = 'idle' | 'running' | 'paused' | 'blocked' | 'done';
+export type StillQueueStatus = 'idle' | 'running' | 'stopped' | 'blocked' | 'done';
 
 export interface StillQueue {
   projectId: string;
