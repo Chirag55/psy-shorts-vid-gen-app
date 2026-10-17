@@ -12,7 +12,7 @@ import { useMounted } from '@/util/useMounted';
 type Busy = 'find' | 'seeds' | 'discover' | null;
 
 /** The watched competitor channels, the discovery inbox, and the title shapes that win. */
-export function CompetitorCard() {
+export default function CompetitorCard() {
   const weekly = useStudio((s) => s.weekly);
   const bank = useStudio((s) => s.bank);
   const setChannels = useStudio((s) => s.setChannels);
