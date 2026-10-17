@@ -2,23 +2,7 @@ import type { SkFont, SkSurface, SkTypeface } from '@shopify/react-native-skia';
 import { ANTON_BYTE_LENGTH, ANTON_REGULAR_BASE64 } from '@/assets/antonFont';
 import { base64ToBytes, guardFontBytes } from '@/core/binaryGuards';
 import { mark, noteProgress, clearProgress } from './breadcrumbs';
-
-/**
- * Skia is required lazily for the same reason as FFmpeg: nothing native should
- * load while the JS bundle is still being evaluated, because a failure there
- * kills the app before any error boundary exists to report it.
- */
-type SkiaModule = typeof import('@shopify/react-native-skia');
-
-let cachedSkia: SkiaModule | null = null;
-
-function skia(): SkiaModule {
-  if (!cachedSkia) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    cachedSkia = require('@shopify/react-native-skia') as SkiaModule;
-  }
-  return cachedSkia;
-}
+import { skia } from './skia';
 import { Directory, File } from 'expo-file-system';
 import { isBlank, type CaptionFrame } from '@/core/captions';
 import { bucketDir } from './workspace';
@@ -32,7 +16,7 @@ import { makeRasterSurface } from './skiaSurface';
  * the caption never occupies more than that band anyway.
  */
 
-const NEON_YELLOW = '#FFFF00';
+const NEON_YELLOW = '#FFF000';
 const WHITE = '#FFFFFF';
 const OUTLINE = '#000000';
 
@@ -46,7 +30,16 @@ export interface CaptionStyle {
   lineGap: number;
   /** Horizontal padding before text wraps. */
   sidePadding: number;
+  /** Horizontal stretch of the face; Anton is drawn wider on Shorts. */
+  scaleX?: number;
+  /** Baseline of a single line within the band; several lines centre on it. */
+  firstBaseline?: number;
 }
+
+/** Where a Short's one-word caption sits, as a share of the frame height. */
+export const SHORT_CAPTION_BASELINE = 0.5445;
+/** Top of the phrase caption band on a Short, as a share of the frame height. */
+export const PHRASE_BAND_TOP = 0.66;
 
 export interface RenderedCaptions {
   /** Path to the FFmpeg concat list describing the frame sequence. */
@@ -111,6 +104,11 @@ export async function preloadCaptionFont(): Promise<void> {
   }
 }
 
+/** The bundled Anton face once loaded, else null. */
+export function captionTypeface(): SkTypeface | null {
+  return cachedTypeface;
+}
+
 function loadFont(size: number): SkFont {
   // System fonts only. Shipping a font file would bloat the APK, and Skia's
   // system manager already resolves a bold sans that reads well at this size.
@@ -147,7 +145,8 @@ function layout(
   font: SkFont,
   maxWidth: number,
   spaceWidth: number,
-  fallbackCharWidth: number
+  fallbackCharWidth: number,
+  maxLines = 2
 ): Line[] {
   const lines: Line[] = [];
   let current: Line = { tokens: [], width: 0 };
@@ -177,7 +176,7 @@ function layout(
   }
 
   if (current.tokens.length) lines.push(current);
-  return lines.slice(0, 2);
+  return lines.slice(0, maxLines);
 }
 
 /**
@@ -196,6 +195,7 @@ export async function renderCaptionFrames(opts: RenderCaptionsOptions): Promise<
   dir.create({ intermediates: true });
 
   const font = loadFont(style.fontSize);
+  if (style.scaleX && style.scaleX !== 1) font.setScaleX(style.scaleX);
   const spaceWidth = font.measureText(' ').width || style.fontSize * 0.3;
   const fallbackCharWidth = style.fontSize * 0.55;
   const maxTextWidth = style.width - style.sidePadding * 2;
@@ -262,7 +262,11 @@ export async function renderCaptionFrames(opts: RenderCaptionsOptions): Promise<
 
       const lines = layout(frame, font, maxTextWidth, spaceWidth, fallbackCharWidth);
       const blockHeight = lines.length * lineHeight;
-      let y = Math.round((style.height - blockHeight) / 2 + style.fontSize);
+      let y = Math.round(
+        style.firstBaseline === undefined
+          ? (style.height - blockHeight) / 2 + style.fontSize
+          : style.firstBaseline - ((lines.length - 1) * lineHeight) / 2
+      );
 
       for (const line of lines) {
         let x = Math.round((style.width - line.width) / 2);
@@ -341,18 +345,175 @@ export async function renderCaptionFrames(opts: RenderCaptionsOptions): Promise<
   };
 }
 
+/**
+ * A text card: the words in capitals, numbers highlighted, shrunk until they
+ * fit on two lines. Written once under the project's cards folder.
+ */
+export async function renderTextCard(opts: {
+  text: string;
+  width: number;
+  slug: string;
+  name: string;
+  rightPadding?: number;
+}): Promise<{ uri: string; width: number; height: number } | null> {
+  const text = opts.text.trim().toUpperCase();
+  if (!text) return null;
+  await preloadCaptionFont();
+  const { Skia, PaintStyle, ImageFormat } = skia();
+  const scale = opts.width / 1080;
+  const pad = Math.round(60 * scale);
+  const right = Math.max(pad, opts.rightPadding ?? pad);
+  const maxWidth = opts.width - pad - right;
+  const tokens = text.split(/\s+/).map((t) => ({ text: t, active: /^\d+[.)]?$/.test(t) }));
+  const frame = { start: 0, end: 1, tokens } as CaptionFrame;
+  let size = Math.round(112 * scale);
+  let font = loadFont(size);
+  let lines: Line[] = [];
+  for (let attempt = 0; attempt < 12; attempt++) {
+    font = loadFont(size);
+    font.setScaleX(1.21);
+    const space = font.measureText(' ').width || size * 0.3;
+    const candidate = layout(frame, font, maxWidth, space, size * 0.55, 99);
+    if (candidate.length <= 2 && candidate.every((l) => l.width <= maxWidth)) {
+      lines = candidate;
+      break;
+    }
+    size = Math.round(size * 0.9);
+  }
+  if (!lines.length) {
+    const space = font.measureText(' ').width || size * 0.3;
+    lines = layout(frame, font, maxWidth, space, size * 0.55, 2);
+  }
+  const outline = Math.max(2, Math.round(size * 0.23));
+  const lineHeight = size + Math.round(14 * scale);
+  const height = Math.round(lines.length * lineHeight + outline * 2 + 20 * scale);
+  const spaceWidth = font.measureText(' ').width || size * 0.3;
+
+  const fill = Skia.Paint();
+  fill.setStyle(PaintStyle.Fill);
+  fill.setAntiAlias(true);
+  const stroke = Skia.Paint();
+  stroke.setStyle(PaintStyle.Stroke);
+  stroke.setStrokeWidth(outline);
+  stroke.setColor(Skia.Color(OUTLINE));
+  stroke.setAntiAlias(true);
+
+  const surface = makeRasterSurface<SkSurface>(Skia, opts.width, height);
+  try {
+    const canvas = surface.getCanvas();
+    canvas.clear(Skia.Color('#00000000'));
+    let y = Math.round(outline + 10 * scale + size);
+    for (const line of lines) {
+      let x = Math.round(pad + (maxWidth - line.width) / 2);
+      for (const token of line.tokens) {
+        canvas.drawText(token.text, x, y, stroke, font);
+        fill.setColor(Skia.Color(token.active ? NEON_YELLOW : WHITE));
+        canvas.drawText(token.text, x, y, fill, font);
+        x = Math.round(x + token.width + spaceWidth);
+      }
+      y += lineHeight;
+    }
+    const image = surface.makeImageSnapshot();
+    try {
+      const bytes = image.encodeToBytes(ImageFormat.PNG, 100);
+      if (!bytes) throw new Error('Skia could not encode a text card.');
+      const dir = new Directory(bucketDir('subs', opts.slug), 'cards');
+      if (!dir.exists) dir.create({ intermediates: true });
+      const file = new File(dir, `${opts.name}.png`);
+      file.create({ overwrite: true });
+      file.write(bytes);
+      return { uri: file.uri, width: opts.width, height };
+    } finally {
+      image.dispose();
+    }
+  } finally {
+    surface.dispose();
+  }
+}
+
+/** The channel handle as a small outlined PNG for the corner of the frame. */
+export async function renderWatermark(opts: {
+  slug: string;
+  width: number;
+  text?: string;
+}): Promise<{ uri: string; width: number; height: number } | null> {
+  const label = (opts.text ?? '@TheMindFiles').trim();
+  if (!label) return null;
+  await preloadCaptionFont();
+  const { Skia, PaintStyle, ImageFormat } = skia();
+  const scale = opts.width / 1080;
+  const size = Math.round(34 * scale);
+  const font = loadFont(size);
+  const pad = Math.round(8 * scale);
+  const textWidth = Math.ceil(font.measureText(label).width);
+  const width = textWidth + pad * 2;
+  const height = size + pad * 2;
+
+  const fill = Skia.Paint();
+  fill.setStyle(PaintStyle.Fill);
+  fill.setAntiAlias(true);
+  fill.setColor(Skia.Color(WHITE));
+  const stroke = Skia.Paint();
+  stroke.setStyle(PaintStyle.Stroke);
+  stroke.setStrokeWidth(Math.max(1, Math.round(size * 0.08)));
+  stroke.setColor(Skia.Color(OUTLINE));
+  stroke.setAntiAlias(true);
+
+  const surface = makeRasterSurface<SkSurface>(Skia, width, height);
+  try {
+    const canvas = surface.getCanvas();
+    canvas.clear(Skia.Color('#00000000'));
+    canvas.drawText(label, pad, pad + size * 0.85, stroke, font);
+    canvas.drawText(label, pad, pad + size * 0.85, fill, font);
+    const image = surface.makeImageSnapshot();
+    try {
+      const bytes = image.encodeToBytes(ImageFormat.PNG, 100);
+      if (!bytes) throw new Error('Skia could not encode the watermark.');
+      const dir = new Directory(bucketDir('subs', opts.slug), 'cards');
+      if (!dir.exists) dir.create({ intermediates: true });
+      const file = new File(dir, 'watermark.png');
+      file.create({ overwrite: true });
+      file.write(bytes);
+      return { uri: file.uri, width, height };
+    } finally {
+      image.dispose();
+    }
+  } finally {
+    surface.dispose();
+  }
+}
+
+/** Top of a text card on a Short: centred at 22% of the height. */
+export function textCardY(canvasHeight: number, cardHeight: number): number {
+  return Math.max(0, Math.round(canvasHeight * 0.22 - cardHeight / 2));
+}
+
 /** Caption band geometry for each format, scaled from the spec's 1080p figures. */
-export function captionStyleFor(mode: 'short' | 'long', width: number, height: number): CaptionStyle {
+export function captionStyleFor(mode: 'short' | 'shortPhrase' | 'long', width: number, _height?: number): CaptionStyle {
+  if (mode === 'shortPhrase') {
+    const scale = width / 1080;
+    return {
+      fontSize: Math.round(62 * scale),
+      scaleX: 1,
+      width,
+      height: Math.round(290 * scale),
+      outlineWidth: Math.max(2, Math.round(8 * scale)),
+      lineGap: Math.round(14 * scale),
+      sidePadding: Math.round(108 * scale),
+    };
+  }
   if (mode === 'short') {
     const scale = width / 1080;
     return {
       // One word alone carries a larger face than a wrapped phrase could.
-      fontSize: Math.round(76 * scale),
+      fontSize: Math.round(64.5 * scale),
+      scaleX: 1.21,
       width,
-      height: Math.round(170 * scale),
-      outlineWidth: Math.max(2, Math.round(6 * scale)),
+      height: Math.round(90 * scale),
+      firstBaseline: Math.round(80 * scale),
+      outlineWidth: Math.max(2, Math.round(15 * scale)),
       lineGap: Math.round(16 * scale),
-      sidePadding: Math.round(60 * scale),
+      sidePadding: Math.round(40 * scale),
     };
   }
 
@@ -368,13 +529,11 @@ export function captionStyleFor(mode: 'short' | 'long', width: number, height: n
 }
 
 /** Vertical placement of the band, keeping clear of platform UI. */
-export function captionBandY(mode: 'short' | 'long', canvasHeight: number, bandHeight: number): number {
+export function captionBandY(mode: 'short' | 'shortPhrase' | 'long', canvasHeight: number, bandHeight: number): number {
+  if (mode === 'shortPhrase') return Math.round(canvasHeight * PHRASE_BAND_TOP);
   if (mode === 'short') {
-    // Centred slightly above the midline, matching the published Shorts.
-    // A lower band collides with the Shorts action rail and the title overlay,
-    // and reads as an afterthought; mid-frame sits over the subject and is
-    // legible at the size a Short is actually watched.
-    return Math.round(canvasHeight * 0.5 - bandHeight / 2);
+    // The word's baseline sits just below the midline, matching the published Shorts.
+    return Math.round(canvasHeight * SHORT_CAPTION_BASELINE - Math.round(80 * (canvasHeight / 1920)));
   }
   // Long form still clears the YouTube scrub bar.
   return Math.round(canvasHeight - bandHeight - canvasHeight * 0.06);
