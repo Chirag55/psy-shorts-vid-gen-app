@@ -8,6 +8,7 @@ import { useStudio } from '@/store';
 import { getKey } from '@/services/keys';
 import { fetchSubscription, preflight, synthesiseChapter, VOICES } from '@/services/elevenlabs';
 import { checkVoiceQuota } from '@/core/guardrails';
+import { CALM_VOICE_SPEED, paceFor } from '@/core/styleProfiles';
 import type { LongScript, ShortScript } from '@/core/types';
 import type { RootStackParamList } from '@/navigation/types';
 
@@ -33,6 +34,8 @@ export default function VoiceScreen() {
   // A ref, not state: two taps landing in the same render tick would both read
   // a stale `false` from state and fire two paid synthesis requests.
   const busyRef = useRef(false);
+  // Set while "Synthesise all" runs, so a single-track tap cannot interleave with the batch.
+  const batchRef = useRef(false);
 
   useEffect(
     () => () => {
@@ -47,33 +50,51 @@ export default function VoiceScreen() {
     if (!project) return [];
     if (project.mode === 'short') {
       const script = project.script as ShortScript;
-      return [{ key: 'short', label: 'Full short', text: script.beats.map((b) => b.text).join(' ') }];
+      return [
+        {
+          key: 'short',
+          label: 'Full short',
+          text: script.beats.map((b) => b.text).join(' '),
+        },
+      ];
     }
     const script = project.script as LongScript;
     return [
       { key: '0', label: 'Cold Open', text: script.coldOpen },
-      ...script.chapters.map((c) => ({ key: String(c.index), label: `Ch ${c.index} · ${c.title}`, text: c.narration })),
+      ...script.chapters.map((c) => ({
+        key: String(c.index),
+        label: `Ch ${c.index} · ${c.title}`,
+        text: c.narration,
+      })),
       { key: '99', label: 'Closing Synthesis', text: script.closingSynthesis },
-    ];
+    ].filter((t) => t.text.trim());
   }, [project]);
 
   const currentUri = playingKey ? project?.assets.audio[playingKey] : undefined;
   const player = useAudioPlayer(currentUri ? { uri: currentUri } : null);
 
-  if (!project) return <Screen><Empty title="Project not found" /></Screen>;
+  if (!project)
+    return (
+      <Screen>
+        <Empty title="Project not found" />
+      </Screen>
+    );
 
-  const pendingChars = tracks
-    .filter((t) => !project.assets.audio[t.key])
-    .reduce((sum, t) => sum + t.text.length, 0);
+  const pendingChars = tracks.filter((t) => !project.assets.audio[t.key]).reduce((sum, t) => sum + t.text.length, 0);
 
   const quota = checkVoiceQuota(
-    tracks.map((t) => t.text).join(''),
+    tracks
+      .filter((t) => !project.assets.audio[t.key])
+      .map((t) => t.text)
+      .join(''),
     settings.voiceCharsUsed,
     settings.voiceCharLimit
   );
+  const remaining = Math.max(0, quota.ceiling - settings.voiceCharsUsed);
 
-  const synthesise = async (track: Track, force: boolean) => {
+  const synthesise = async (track: Track, force: boolean, inBatch = false) => {
     if (busyRef.current) return;
+    if (batchRef.current && !inBatch) return;
 
     if (project.assets.audio[track.key] && !force) {
       Alert.alert(
@@ -81,41 +102,49 @@ export default function VoiceScreen() {
         'This track is done. Re-synthesising only costs characters if the text or voice has changed — identical text is served from the on-device cache for free.',
         [
           { text: 'Keep it', style: 'cancel' },
-          { text: 'Re-synthesise', onPress: () => void synthesise(track, true) },
+          {
+            text: 'Re-synthesise',
+            onPress: () => void synthesise(track, true),
+          },
         ]
       );
       return;
     }
 
-    const apiKey = await getKey('elevenlabs');
-    if (!apiKey) {
-      Alert.alert('ElevenLabs key missing', 'Add your API key in Settings.');
-      return;
-    }
-
-    // Pre-flight the spend before the request goes out — this is the only point
-    // at which an over-budget synthesis can still be stopped for free.
-    //
-    // Usage is read live from the store rather than from this render's closure:
-    // "Synthesise all" loops through tracks without re-rendering, so a captured
-    // value would still show the usage from before the first track and let the
-    // batch sail past the ceiling.
-    const live = useStudio.getState().settings;
-    const check = checkVoiceQuota(track.text, live.voiceCharsUsed, live.voiceCharLimit);
-    if (!check.allowed) {
-      Alert.alert('Quota guard', check.reason ?? 'Not enough characters remaining.');
-      return;
-    }
-
     busyRef.current = true;
-    setBusyKey(track.key);
     try {
+      const apiKey = await getKey('elevenlabs');
+      if (!apiKey) {
+        Alert.alert('ElevenLabs key missing', 'Add your API key in Settings.');
+        return;
+      }
+
+      // Pre-flight the spend before the request goes out — this is the only point
+      // at which an over-budget synthesis can still be stopped for free.
+      //
+      // Usage is read live from the store rather than from this render's closure:
+      // "Synthesise all" loops through tracks without re-rendering, so a captured
+      // value would still show the usage from before the first track and let the
+      // batch sail past the ceiling.
+      const live = useStudio.getState().settings;
+      const check = checkVoiceQuota(track.text, live.voiceCharsUsed, live.voiceCharLimit);
+      if (!check.allowed) {
+        Alert.alert('Quota guard', check.reason ?? 'Not enough characters remaining.');
+        return;
+      }
+
+      setBusyKey(track.key);
       const result = await synthesiseChapter({
         apiKey,
         voiceId: project.voiceId || settings.voiceId,
         text: track.text,
         slug: project.slug,
         key: track.key,
+        // A calm Short is read a touch slower; long-form keeps the voice's own pace.
+        speed:
+          project.mode === 'short' && paceFor(settings.narrationPace, project.style) === 'calm'
+            ? CALM_VOICE_SPEED
+            : undefined,
       });
       setAudio(project.id, track.key, result.audioUri, result.words);
 
@@ -135,7 +164,10 @@ export default function VoiceScreen() {
       // from the desktop studio is reflected too.
       try {
         const sub = await fetchSubscription(apiKey);
-        updateSettings({ voiceCharsUsed: sub.characterCount, voiceCharLimit: sub.characterLimit });
+        updateSettings({
+          voiceCharsUsed: sub.characterCount,
+          voiceCharLimit: sub.characterLimit,
+        });
       } catch {
         // Offline: fall back to incrementing the locally tracked spend.
         updateSettings({
@@ -150,15 +182,17 @@ export default function VoiceScreen() {
     }
   };
 
-  const synthesiseAll = async () => {
-    if (busyRef.current) return;
-
+  const runBatch = async () => {
     const pending = tracks.filter((t) => !project.assets.audio[t.key]);
     if (!pending.length) {
       Alert.alert('Nothing pending', 'Every track already has a voiceover.');
       return;
     }
-    const check = checkVoiceQuota(pending.map((t) => t.text).join(''), settings.voiceCharsUsed, settings.voiceCharLimit);
+    const check = checkVoiceQuota(
+      pending.map((t) => t.text).join(''),
+      settings.voiceCharsUsed,
+      settings.voiceCharLimit
+    );
     if (!check.allowed) {
       Alert.alert('Quota guard', check.reason ?? 'Not enough characters remaining.');
       return;
@@ -180,7 +214,17 @@ export default function VoiceScreen() {
 
     for (const track of pending) {
       if (!mounted.current) return;
-      await synthesise(track, false);
+      await synthesise(track, false, true);
+    }
+  };
+
+  const synthesiseAll = async () => {
+    if (busyRef.current || batchRef.current) return;
+    batchRef.current = true;
+    try {
+      await runBatch();
+    } finally {
+      batchRef.current = false;
     }
   };
 
@@ -205,16 +249,20 @@ export default function VoiceScreen() {
       <Card>
         <H2>Voice</H2>
         <Row style={{ justifyContent: 'space-between' }}>
-          <Small>{settings.voiceCharsUsed.toLocaleString()} / {settings.voiceCharLimit.toLocaleString()} chars used</Small>
+          <Small>
+            {settings.voiceCharsUsed.toLocaleString()} / {settings.voiceCharLimit.toLocaleString()} chars used
+          </Small>
           <Badge label={quota.allowed ? 'WITHIN BUDGET' : 'OVER CEILING'} tone={quota.allowed ? 'ok' : 'danger'} />
         </Row>
         <ProgressBar fraction={settings.voiceCharsUsed / (settings.voiceCharLimit || 1)} />
-        <Small>
-          {pendingChars.toLocaleString()} characters pending · safety ceiling {quota.ceiling.toLocaleString()}
+        <Small style={{ color: quota.allowed ? colors.text : colors.danger }}>
+          This script needs about {pendingChars.toLocaleString()} characters; {remaining.toLocaleString()} are left
+          before the {quota.ceiling.toLocaleString()} safety ceiling this month.
         </Small>
+        {quota.allowed ? null : <Small style={{ color: colors.danger }}>{quota.reason}</Small>}
         <Small style={{ color: colors.textFaint }}>
-          Identical text in the same voice is served from the on-device cache and is never billed
-          twice. Audio is written to disk the moment it arrives, before anything that could fail.
+          Identical text in the same voice is served from the on-device cache and is never billed twice. Audio is
+          written to disk the moment it arrives, before anything that could fail.
         </Small>
       </Card>
 
@@ -260,7 +308,11 @@ export default function VoiceScreen() {
             <Divider />
             <Row style={{ justifyContent: 'space-between' }}>
               <Small>{track.text.length} chars</Small>
-              {duration ? <Small>{duration.toFixed(1)}s · {words.length} words aligned</Small> : null}
+              {duration ? (
+                <Small>
+                  {duration.toFixed(1)}s · {words.length} words aligned
+                </Small>
+              ) : null}
             </Row>
             <Row style={{ marginTop: space.xs }}>
               <Button
