@@ -18,6 +18,7 @@ export function PromptCard({
   onImport,
   onGenerate,
   generating,
+  verbatim,
 }: {
   label: string;
   prompt: string;
@@ -25,6 +26,8 @@ export function PromptCard({
   onImport?: () => void;
   onGenerate?: () => void;
   generating?: boolean;
+  /** Bank prompts carry their own style line, so the lock check does not apply. */
+  verbatim?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -40,7 +43,7 @@ export function PromptCard({
       <Row style={{ justifyContent: 'space-between' }}>
         <Text style={s.label}>{label}</Text>
         <Row>
-          {!hasStyleLock(prompt) ? <Badge label="NO STYLE LOCK" tone="danger" /> : null}
+          {!verbatim && !hasStyleLock(prompt) ? <Badge label="NO STYLE LOCK" tone="danger" /> : null}
           {status ? <Badge label={status.label} tone={status.tone} /> : null}
         </Row>
       </Row>
