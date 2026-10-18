@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Badge, Body, Button, Card, Empty, Field, H2, Row, Screen, Segmented, Small } from '@/components/ui';
@@ -7,12 +8,28 @@ import { colors, radius, space } from '@/theme';
 import { useStudio } from '@/store';
 import { generateTopicIdeas } from '@/services/scriptProvider';
 import { fetchPerformanceContext } from '@/services/performanceContext';
+import { currentPriority } from '@/core/priority';
+import { useMounted } from '@/util/useMounted';
+import ImportedTopicBank from '@/screens/ImportedTopicBank';
 import type { RootStackParamList } from '@/navigation/types';
 import type { Mode } from '@/core/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
+/** The bank imported from the topic bank file, or (when chosen in Settings) AI ideas. */
 export default function TopicBankScreen() {
+  const source = useStudio((s) => s.settings.topicSource);
+  if (source !== 'ai') {
+    return (
+      <Screen>
+        <ImportedTopicBank />
+      </Screen>
+    );
+  }
+  return <AiTopicBank />;
+}
+
+function AiTopicBank() {
   const nav = useNavigation<Nav>();
   const topics = useStudio((s) => s.topics);
   const addTopics = useStudio((s) => s.addTopics);
@@ -22,25 +39,60 @@ export default function TopicBankScreen() {
   const [category, setCategory] = useState('Social Dynamics');
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<Mode>('short');
+  const [notice, setNotice] = useState('');
+  const mounted = useMounted();
+  // A ref, so two taps in one render cannot start two paid requests.
+  const runningRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const refill = async () => {
+    if (useStudio.getState().settings.topicSource !== 'ai') return;
+    if (runningRef.current) return;
+    runningRef.current = true;
     setBusy(true);
+    setNotice('');
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
-      const model =
-        settings.scriptProvider === 'anthropic' ? settings.anthropicModel : settings.geminiModel;
+      const anthropic = settings.scriptProvider === 'anthropic';
+      const model = anthropic ? settings.anthropicModel : settings.geminiModel;
+      const fallbackModel = anthropic ? settings.geminiModel : settings.anthropicModel;
       const performanceContext = await fetchPerformanceContext(mode === 'short');
 
       const ideas = await generateTopicIdeas(
-        { provider: settings.scriptProvider, model, performanceContext },
+        {
+          provider: settings.scriptProvider,
+          model,
+          fallbackModel,
+          performanceContext,
+          priority: currentPriority(),
+          signal: controller.signal,
+          onNotice: (n: string) => {
+            if (mounted.current) setNotice(n);
+          },
+        } as any,
         category,
         8,
         topics.map((t) => t.topic)
       );
       addTopics(ideas.map((i) => ({ topic: i.topic, category: i.category || category })));
     } catch (e) {
-      Alert.alert('Ideation failed', e instanceof Error ? e.message : String(e));
+      if (mounted.current && !controller.signal.aborted) {
+        const message = e instanceof Error ? e.message : String(e);
+        Alert.alert('Ideation failed', message, [
+          { text: 'Copy details', onPress: () => void Clipboard.setStringAsync(message) },
+          { text: 'OK', style: 'cancel' },
+        ]);
+      }
     } finally {
-      setBusy(false);
+      runningRef.current = false;
+      if (abortRef.current === controller) abortRef.current = null;
+      if (mounted.current) {
+        setBusy(false);
+        setNotice('');
+      }
     }
   };
 
@@ -71,6 +123,7 @@ export default function TopicBankScreen() {
           onPress={refill}
           style={{ marginTop: space.md }}
         />
+        {notice ? <Small style={{ marginTop: space.sm, color: colors.textDim }}>{notice}</Small> : null}
       </Card>
 
       {!topics.length ? (
