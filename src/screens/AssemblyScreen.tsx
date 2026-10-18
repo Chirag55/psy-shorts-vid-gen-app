@@ -1,13 +1,17 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Image, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useRoute, type RouteProp } from '@react-navigation/native';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import * as MediaLibrary from 'expo-media-library';
-import { Badge, Body, Button, Card, Empty, H2, H3, ProgressBar, Row, Screen, Small } from '@/components/ui';
+import { saveToGallery as saveRenderToGallery } from '@/services/gallery';
+import { Badge, Body, Button, Card, Empty, Field, H2, H3, ProgressBar, Row, Screen, Small } from '@/components/ui';
 import { colors, radius, space } from '@/theme';
 import { useStudio } from '@/store';
-import { assembleLongform, assembleShort } from '@/services/assembler';
+import { assembleLongform, assembleShort, type RenderInfo } from '@/services/assembler';
 import { cancelAll, FFmpegError } from '@/services/ffmpeg';
+import { appendGateLog, gateInputFor, runGate } from '@/core/authenticity';
+import { loudnessOk } from '@/core/renderRules';
+import { titleCache } from '@/core/discovery';
+import { ORIGINALITY_CHECKLIST } from '@/core/originality';
 import type { RootStackParamList } from '@/navigation/types';
 
 export default function AssemblyScreen() {
@@ -16,6 +20,7 @@ export default function AssemblyScreen() {
   const settings = useStudio((s) => s.settings);
   const updateSettings = useStudio((s) => s.updateSettings);
   const patchAssets = useStudio((s) => s.patchAssets);
+  const updateProject = useStudio((s) => s.updateProject);
 
   const [rendering, setRendering] = useState(false);
   const [step, setStep] = useState('');
@@ -26,6 +31,8 @@ export default function AssemblyScreen() {
   // write is gated on the component still being mounted.
   const mounted = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
+  // State lags a render behind; the ref stops a double tap starting two renders.
+  const renderingRef = useRef(false);
 
   useEffect(
     () => () => {
@@ -37,7 +44,16 @@ export default function AssemblyScreen() {
 
   const player = useVideoPlayer(project?.assets.finalVideo ?? null);
 
-  if (!project) return <Screen><Empty title="Project not found" /></Screen>;
+  const projects = useStudio((s) => s.projects);
+  const competitorVideos = useStudio((s) => s.weekly.competitorVideos);
+  const channels = useStudio((s) => s.weekly.channels);
+  const titles = useMemo(() => titleCache(competitorVideos, channels), [competitorVideos, channels]);
+  const gate = useMemo(
+    () => (project ? runGate(gateInputFor(project, projects, titles, settings.neutralTerms)) : undefined),
+    [project, projects, titles, settings.neutralTerms]
+  );
+  const [overrideReason, setOverrideReason] = useState('');
+  const [source, setSource] = useState(project?.source ?? '');
 
   // Lines arrive pre-batched from the FFmpeg wrapper; keep only a bounded tail
   // so a long render cannot pin tens of thousands of strings in memory.
@@ -46,11 +62,29 @@ export default function AssemblyScreen() {
     setLogs((prev) => [...prev, ...lines].slice(-200));
   }, []);
 
+  if (!project) return <Screen><Empty title="Project not found" /></Screen>;
+
   const render = async () => {
     // Guard re-entry: a double tap would otherwise start two FFmpeg sessions
     // writing to the same output file.
-    if (rendering) return;
+    if (renderingRef.current) return;
 
+    // The gate runs fresh against the live store on every attempt, and every attempt is logged.
+    const live = useStudio.getState();
+    const result = runGate(gateInputFor(project, live.projects, titles, live.settings.neutralTerms));
+    updateProject(project.id, { gateLog: appendGateLog(project.gateLog, result, project.review, new Date()) });
+    if (!result.ok) {
+      Alert.alert(
+        'Blocked by the authenticity gate',
+        result.checks
+          .filter((c) => c.status === 'block')
+          .map((c) => `${c.label}: ${c.detail}`)
+          .join('\n\n')
+      );
+      return;
+    }
+
+    renderingRef.current = true;
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -60,11 +94,20 @@ export default function AssemblyScreen() {
     setStep('Starting');
 
     try {
+      const short = project.mode === 'short';
       const opts = {
-        includeMascot: settings.includeMascot,
+        includeMascot: settings.includeMascot && settings.mascot !== 'off',
+        textWatermark: short && settings.textWatermark,
+        mascot: settings.mascot,
+        wordCaptions: settings.wordCaptions,
         includeCaptions: settings.includeCaptions,
         draft: settings.draftRender,
-        mascotAssets: settings.mascotAssets,
+        hootSide: settings.hootSide,
+        musicBed: short && (settings.musicBed || Boolean(project.style?.music)),
+        cutWhoosh: short && settings.cutWhoosh,
+        punchIn: short && settings.punchIn,
+        onRenderInfo: (info: RenderInfo) => patchAssets(project.id, { renderInfo: info as any }),
+        hook: useStudio.getState().channelConfig.hook,
         signal: controller.signal,
         onLog: appendLogs,
         onProgress: (label: string, done: number, total: number) => {
@@ -75,7 +118,12 @@ export default function AssemblyScreen() {
       };
 
       const uri = project.mode === 'short' ? await assembleShort(project, opts) : await assembleLongform(project, opts);
-      patchAssets(project.id, { finalVideo: uri });
+      patchAssets(project.id, {
+        finalVideo: uri,
+        mascotVariant: short ? (settings.includeMascot ? 'delayed' : 'none') : undefined,
+        // A long render reports nothing, so a Short's old render check must not linger.
+        ...(short ? {} : { renderInfo: undefined }),
+      } as any);
       if (mounted.current) {
         setStep('Complete');
         setProgress(1);
@@ -89,6 +137,7 @@ export default function AssemblyScreen() {
       }
     } finally {
       abortRef.current = null;
+      renderingRef.current = false;
       if (mounted.current) setRendering(false);
     }
   };
@@ -100,14 +149,10 @@ export default function AssemblyScreen() {
 
   const saveToGallery = async () => {
     if (!project.assets.finalVideo) return;
-    const permission = await MediaLibrary.requestPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Permission needed', 'Allow media access to save the render to your gallery.');
-      return;
-    }
     try {
-      await MediaLibrary.saveToLibraryAsync(project.assets.finalVideo);
-      Alert.alert('Saved', 'The render is in your gallery.');
+      const where = await saveRenderToGallery(project.assets.finalVideo);
+      if (where !== 'gallery') Alert.alert('Permission needed', 'Allow media access to save the render to your gallery.');
+      else Alert.alert('Saved', 'The render is in your gallery.');
     } catch (e) {
       Alert.alert('Save failed', e instanceof Error ? e.message : String(e));
     }
@@ -134,22 +179,49 @@ export default function AssemblyScreen() {
         />
         <ToggleRow
           label="Professor Hoot overlay"
-          hint={project.mode === 'short' ? 'Bottom-left PiP, expression per beat' : 'Chapter transitions only'}
+          hint={
+            project.mode === 'short'
+              ? 'Pack v2, small and bottom-left. Shown in the last 2 s by default; change it in Settings (CR-86B)'
+              : 'Pack v2, bottom-right all the way through: opens the file on each chapter, reacts on key lines'
+          }
           value={settings.includeMascot}
           onChange={(v) => updateSettings({ includeMascot: v })}
         />
         <ToggleRow
           label="Draft quality"
-          hint="720p, faster preset — much cooler and quicker on a phone"
+          hint="720p, faster preset: for checking only. A draft is never published (CR-80J)"
           value={settings.draftRender}
           onChange={(v) => updateSettings({ draftRender: v })}
         />
-        {settings.includeMascot && !Object.keys(settings.mascotAssets).length ? (
-          <Small style={{ color: colors.warn }}>
-            No Hoot expressions imported yet — add them in Settings or the overlay is skipped.
-          </Small>
+        {project.mode === 'short' ? (
+          <ToggleRow
+            label="Music bed (test)"
+            hint="A soft pad made by the app under the voice, ducked while speech plays, about 14 dB under it. Off unless you switch it on."
+            value={settings.musicBed}
+            onChange={(v) => updateSettings({ musicBed: v })}
+          />
+        ) : null}
+        {project.mode === 'short' ? (
+          <ToggleRow
+            label="Whoosh at cuts (test)"
+            hint="A short, quiet whoosh at each cut, made by the app. Off unless you switch it on."
+            value={settings.cutWhoosh}
+            onChange={(v) => updateSettings({ cutWhoosh: v })}
+          />
+        ) : null}
+        {project.mode === 'short' ? (
+          <ToggleRow
+            label="Punch-in (test)"
+            hint="Each generated clip slowly grows 1.0x to 1.12x, a small reset every 2 to 3 s. Off unless you switch it on."
+            value={settings.punchIn}
+            onChange={(v) => updateSettings({ punchIn: v })}
+          />
         ) : null}
       </Card>
+
+      {project.mode === 'short' && project.assets.renderInfo ? (
+        <RenderCheck info={project.assets.renderInfo as unknown as RenderInfo} />
+      ) : null}
 
       <Card>
         <H3>Reused, not regenerated</H3>
@@ -171,6 +243,98 @@ export default function AssemblyScreen() {
         </Row>
       </Card>
 
+      {gate ? (
+        <Card>
+          <Row style={{ justifyContent: 'space-between' }}>
+            <H3>Authenticity gate</H3>
+            <Badge label={gate.ok ? 'READY' : 'BLOCKED'} tone={gate.ok ? 'ok' : 'danger'} />
+          </Row>
+          {gate.checks.map((c) => (
+            <View key={c.id} style={{ marginTop: space.xs }}>
+              <Small
+                style={{
+                  color: c.status === 'block' ? colors.danger : c.status === 'warn' ? colors.warn : colors.ok,
+                  fontWeight: '800',
+                }}
+              >
+                {c.status === 'pass' ? '✓' : c.status === 'warn' ? '!' : '✕'} {c.label}
+              </Small>
+              <Small>{c.detail}</Small>
+            </View>
+          ))}
+          {gate.checks.some((c) => c.id === 'originality' && c.status === 'block') ? (
+            <>
+              <Field
+                label="Publish this title anyway: why is it fine?"
+                value={overrideReason}
+                onChangeText={setOverrideReason}
+                placeholder="e.g. the same term, my own angle and study"
+              />
+              <Button
+                label="Log the reason and allow it"
+                variant="secondary"
+                disabled={overrideReason.trim().length < 8}
+                onPress={() =>
+                  updateProject(project.id, {
+                    originalityOverride: { reason: overrideReason.trim(), at: new Date().toISOString() },
+                  })
+                }
+              />
+            </>
+          ) : null}
+          {Boolean((project.script as any).bankV2) ? null : (
+            <Field
+              label="Source (the study or concept this is based on)"
+              value={source}
+              onChangeText={(t) => {
+                setSource(t);
+                updateProject(project.id, { source: t.trim() || undefined });
+              }}
+              placeholder="e.g. Cialdini (1984), Influence"
+            />
+          )}
+          {settings.reviewerName.trim() ? null : (
+            <Field
+              label="Reviewer name (saved for every review)"
+              value={settings.reviewerName}
+              onChangeText={(t) => updateSettings({ reviewerName: t })}
+              placeholder="Your name"
+            />
+          )}
+          <Small>Before you tick: {ORIGINALITY_CHECKLIST.join(' ')}</Small>
+          <ToggleRow
+            label="I've read this script and the visuals match it."
+            hint={
+              settings.reviewerName.trim()
+                ? `Recorded as ${settings.reviewerName.trim()} with the time. Any later change to the script or shots clears it.`
+                : 'Enter your name first.'
+            }
+            value={Boolean(project.review && project.review.scriptHash === gate.scriptHash)}
+            onChange={(v) => {
+              if (!settings.reviewerName.trim()) {
+                Alert.alert('Name needed', 'Type the reviewer name first; it is stored with the review.');
+                return;
+              }
+              updateProject(project.id, {
+                review: v
+                  ? { reviewer: settings.reviewerName.trim(), at: new Date().toISOString(), scriptHash: gate.scriptHash }
+                  : undefined,
+              });
+            }}
+          />
+          {gate.checks.some((c) => c.id === 'hook' && c.status === 'block') && project.mode === 'long' ? (
+            <Small style={{ color: colors.warn }}>
+              This script may be from an older version of the bank. Go back to the project: if it says "The bank has
+              changed", tap "Update from the bank".
+            </Small>
+          ) : null}
+          <Small>
+            Every video must pass before it renders, and every attempt is logged (CR-45). These checks can't be switched
+            off (CR-57).
+          </Small>
+        </Card>
+      ) : null}
+
       <Card>
         <Row style={{ justifyContent: 'space-between' }}>
           <H3>Render</H3>
@@ -187,6 +351,7 @@ export default function AssemblyScreen() {
             label={rendering ? 'Rendering…' : project.assets.finalVideo ? 'Re-render' : 'Assemble video'}
             onPress={render}
             loading={rendering}
+            disabled={!gate?.ok && !rendering}
             style={{ flex: 1 }}
           />
           {rendering ? <Button label="Cancel" variant="danger" onPress={cancel} /> : null}
@@ -246,6 +411,60 @@ function ToggleRow({
         thumbColor={value ? colors.accent : colors.textFaint}
       />
     </Row>
+  );
+}
+
+/** What the last Short render measured: size, loudness, silences and the first frames. */
+function RenderCheck({ info }: { info: RenderInfo }) {
+  const rows: [string, string, boolean | undefined][] = [
+    ['Size', `${info.width}x${info.height}${info.draft ? ' (draft: not for publishing)' : ''}`, !info.draft],
+    [
+      'Loudness',
+      info.lufs !== undefined ? `${info.lufs.toFixed(1)} LUFS (aim -14, accept -15 to -13)` : 'not measured',
+      info.lufs !== undefined ? loudnessOk(info.lufs) : undefined,
+    ],
+    [
+      'Silences over 0.45 s',
+      info.longGaps !== undefined ? String(info.longGaps) : 'not measured',
+      info.longGaps !== undefined ? info.longGaps === 0 : undefined,
+    ],
+    ...(info.pausesCut
+      ? [['Pauses trimmed', `${info.pausesCut.toFixed(2)} s taken out at 0.35 s each`, true] as [string, string, boolean]]
+      : []),
+  ];
+
+  return (
+    <Card>
+      <H3>Render check</H3>
+      {info.hookText ? <Small>Hook text drawn from frame 0: "{info.hookText}"</Small> : null}
+      {rows.map(([label, value, ok]) => (
+        <Row key={label} style={{ justifyContent: 'space-between', marginTop: space.xs }}>
+          <Small>{label}</Small>
+          <Small style={{ color: ok === undefined ? colors.text : ok ? colors.ok : colors.warn }}>{value}</Small>
+        </Row>
+      ))}
+      {info.frame0 || info.frame30 ? (
+        <Row style={{ gap: space.sm, marginTop: space.sm }}>
+          {(
+            [
+              ['Frame 0', info.frame0],
+              ['At 1 s', info.frame30],
+            ] as [string, string | undefined][]
+          ).map(([label, uri]) =>
+            uri ? (
+              <View key={label} style={{ flex: 1 }}>
+                <Image
+                  source={{ uri }}
+                  style={{ width: '100%', aspectRatio: 9 / 16, borderRadius: radius.sm }}
+                  resizeMode="cover"
+                />
+                <Small>{label}</Small>
+              </View>
+            ) : null
+          )}
+        </Row>
+      ) : null}
+    </Card>
   );
 }
 
