@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { ActivityIndicator, Alert, StatusBar, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, StatusBar, View } from 'react-native';
 import { NavigationContainer, DarkTheme, type Theme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -12,6 +12,12 @@ import { clearTrail } from '@/services/breadcrumbs';
 import { diagnosePreviousRun } from '@/services/diagnostics';
 import { clearJavaCrash } from '@/services/crashInfo';
 import * as Clipboard from 'expo-clipboard';
+import { registerBackgroundChecks } from '@/services/backgroundChecks';
+import { runReleaseChecks } from '@/services/releaseWatch';
+import { runFunnelUpdates } from '@/services/funnelUpdates';
+import { refreshYppIfStale } from '@/services/ypp';
+import { runWeeklyReviewIfDue } from '@/services/weeklyReview';
+import { runAutoImport, showAutoImportNotice } from '@/services/autoImportBank';
 
 const theme: Theme = {
   ...DarkTheme,
@@ -28,6 +34,42 @@ const theme: Theme = {
 
 export default function App() {
   const hydrated = useStudio((s) => s.hydrated);
+  const loadProblem = useStudio((s) => s.loadProblem);
+
+  // Projects that could not be read are kept on disk; say so instead of showing an empty studio.
+  useEffect(() => {
+    if (loadProblem) Alert.alert('Saved projects not loaded', loadProblem);
+  }, [loadProblem]);
+
+  // A newer bundled topic bank imports itself once the store is ready.
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      if (runAutoImport()) showAutoImportNotice();
+    } catch (e) {
+      Alert.alert('Topic bank not imported', e instanceof Error ? e.message : String(e));
+    }
+  }, [hydrated]);
+
+  // Release checks, funnel links, YPP numbers and the weekly review: on launch and on every return.
+  useEffect(() => {
+    if (!hydrated) return;
+    void registerBackgroundChecks();
+    const check = () => {
+      runReleaseChecks()
+        .catch(() => undefined)
+        .then(() => runFunnelUpdates())
+        .catch(() => undefined)
+        .then(() => refreshYppIfStale())
+        .then(() => runWeeklyReviewIfDue())
+        .catch(() => undefined);
+    };
+    check();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') check();
+    });
+    return () => sub.remove();
+  }, [hydrated]);
 
   useEffect(() => {
     // Create the workspace tree up front so every later write can assume it exists.

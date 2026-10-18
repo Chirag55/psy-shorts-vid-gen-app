@@ -6,6 +6,10 @@ import { colors } from '@/theme';
 import StudioHubScreen from '@/screens/StudioHubScreen';
 import SettingsScreen from '@/screens/SettingsScreen';
 import LibraryScreen from '@/screens/LibraryScreen';
+import MetadataUpdateScreen from '@/screens/MetadataUpdateScreen';
+import SeoAuditScreen from '@/screens/SeoAuditScreen';
+import YppScreen from '@/screens/YppScreen';
+import ResearchScreen from '@/screens/ResearchScreen';
 import GenerateScreen from '@/screens/GenerateScreen';
 import ProjectScreen from '@/screens/ProjectScreen';
 import StoryboardScreen from '@/screens/StoryboardScreen';
@@ -55,6 +59,15 @@ function TabsNavigator() {
         }}
       />
       <Tabs.Screen
+        name="Research"
+        component={ResearchScreen}
+        options={{
+          title: 'Research',
+          headerShown: false,
+          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>🔎</Text>,
+        }}
+      />
+      <Tabs.Screen
         name="Settings"
         component={SettingsScreen}
         options={{
@@ -79,6 +92,9 @@ export default function Navigation() {
       <Stack.Screen name="Thumbnail" component={ThumbnailScreen} options={{ title: 'Thumbnail' }} />
       <Stack.Screen name="Publish" component={PublishScreen} options={{ title: 'Publish' }} />
       <Stack.Screen name="TopicBank" component={TopicBankScreen} options={{ title: 'Topic bank' }} />
+      <Stack.Screen name="MetadataUpdate" component={MetadataUpdateScreen} options={{ title: 'Update metadata' }} />
+      <Stack.Screen name="SeoAudit" component={SeoAuditScreen} options={{ title: 'SEO audit' }} />
+      <Stack.Screen name="Ypp" component={YppScreen} options={{ title: 'Partner Program' }} />
     </Stack.Navigator>
   );
 }
