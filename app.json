@@ -2,9 +2,12 @@
   "expo": {
     "name": "The Mind Files Studio",
     "slug": "mindfiles-studio-mobile",
-    "version": "1.9.0",
+    "version": "6.1.13",
     "orientation": "portrait",
-    "scheme": "mindfiles",
+    "scheme": [
+      "mindfiles",
+      "com.googleusercontent.apps.1073009032092-66pgmgff14f89ve3vqo1cqprlg4f6pcm"
+    ],
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "assetBundlePatterns": [
@@ -12,16 +15,43 @@
     ],
     "android": {
       "package": "com.mindfiles.studio",
-      "versionCode": 9,
+      "versionCode": 100,
       "permissions": [
-        "android.permission.INTERNET"
+        "android.permission.INTERNET",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO"
       ],
       "blockedPermissions": [
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.RECORD_AUDIO",
         "android.permission.CAMERA",
-        "android.permission.ACCESS_MEDIA_LOCATION"
+        "android.permission.ACCESS_MEDIA_LOCATION",
+        "com.google.android.c2dm.permission.RECEIVE",
+        "android.permission.READ_APP_BADGE",
+        "com.anddoes.launcher.permission.UPDATE_COUNT",
+        "com.htc.launcher.permission.READ_SETTINGS",
+        "com.htc.launcher.permission.UPDATE_SHORTCUT",
+        "com.huawei.android.launcher.permission.CHANGE_BADGE",
+        "com.huawei.android.launcher.permission.READ_SETTINGS",
+        "com.huawei.android.launcher.permission.WRITE_SETTINGS",
+        "com.majeur.launcher.permission.UPDATE_BADGE",
+        "com.oppo.launcher.permission.READ_SETTINGS",
+        "com.oppo.launcher.permission.WRITE_SETTINGS",
+        "com.sec.android.provider.badge.permission.READ",
+        "com.sec.android.provider.badge.permission.WRITE",
+        "com.sonyericsson.home.permission.BROADCAST_BADGE",
+        "com.sonymobile.home.permission.PROVIDER_INSERT_BADGE",
+        "me.everything.badger.permission.BADGE_COUNT_READ",
+        "me.everything.badger.permission.BADGE_COUNT_WRITE"
       ]
     },
     "plugins": [
