@@ -1,38 +1,50 @@
-import React, { useRef, useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useRoute, type RouteProp } from '@react-navigation/native';
-import ViewShot, { type ViewShotRef } from 'react-native-view-shot';
-import * as MediaLibrary from 'expo-media-library';
-import { File } from 'expo-file-system';
+import * as ImagePicker from 'expo-image-picker';
+import { ensureHootPack } from '@/services/hootPack';
+import { saveToGallery } from '@/services/gallery';
 import { Badge, Button, Card, Empty, Field, H2, H3, Row, Screen, Small } from '@/components/ui';
 import { colors, radius, space } from '@/theme';
 import { useStudio } from '@/store';
 import { sampleThumbnailFrames } from '@/services/assembler';
-import { bucketFile } from '@/services/workspace';
+import { renderThumbnail, THUMB_H, THUMB_W } from '@/services/thumbnailRenderer';
+import { renderThumbnailV2 } from '@/services/thumbnailV2';
+import { fullBleedFontSize, PREVIEW_WIDTH, thumbnailLegibility, thumbnailVariants } from '@/core/thumbnailLayout';
+import { importInto } from '@/services/workspace';
+import { useMounted } from '@/util/useMounted';
+import { ensureFreshToken, setThumbnail } from '@/services/youtube';
+import { getKey, setKey } from '@/services/keys';
+import { textWords } from '@/core/bankV2';
 import type { ShortScript } from '@/core/types';
 import type { RootStackParamList } from '@/navigation/types';
 
 /**
- * Thumbnail studio.
- *
- * The canvas is composed as real React Native views and captured with
- * view-shot, rather than drawn by FFmpeg — that way the preview the user tunes
- * is pixel-identical to the file that gets written.
+ * Thumbnail studio. A sampled frame is drawn into the 1280x720 card by the
+ * renderer (the same Skia text the captions use), so the preview is the file.
  */
 export default function ThumbnailScreen() {
   const { id } = useRoute<RouteProp<RootStackParamList, 'Thumbnail'>>().params;
   const project = useStudio((s) => s.projects.find((p) => p.id === id));
   const patchAssets = useStudio((s) => s.patchAssets);
 
-  const shotRef = useRef<ViewShotRef>(null);
   const [candidates, setCandidates] = useState<string[]>([]);
   const [selected, setSelected] = useState(0);
   const [sampling, setSampling] = useState(false);
+  const [sampled, setSampled] = useState(false);
+  const [drawing, setDrawing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [badge, setBadge] = useState('PSYCHOLOGY FACT');
 
-  const defaultLines = splitHeadline(
-    project?.mode === 'short' ? (project.script as ShortScript).hookLine : project?.script.title ?? ''
-  );
+  const longBank: any = project?.mode === 'long' ? (project.script as any).bankV2 : undefined;
+  const shortBank: any = project?.mode === 'short' ? (project.script as any).bankV2 : undefined;
+  const headline: string =
+    longBank?.thumbnailText ??
+    shortBank?.hookText ??
+    (project?.mode !== 'short' ? (project?.script.title ?? '') : (project.script as ShortScript).hookLine);
+  const defaultLines = splitHeadline(headline);
   const [line1, setLine1] = useState(defaultLines[0]);
   const [line2, setLine2] = useState(defaultLines[1]);
 
@@ -51,34 +63,57 @@ export default function ThumbnailScreen() {
       const frames = await sampleThumbnailFrames(project.assets.finalVideo, project.slug);
       setCandidates(frames);
       setSelected(0);
+      setSampled(true);
     } catch (e) {
+      setSampled(true);
+      setCandidates([]);
       Alert.alert('Sampling failed', e instanceof Error ? e.message : String(e));
     } finally {
       setSampling(false);
     }
   };
 
+  const draw = async () => {
+    const frame = candidates[selected];
+    if (!frame) {
+      Alert.alert('Pick a frame', 'Sample candidate frames and choose one first.');
+      return;
+    }
+    setDrawing(true);
+    try {
+      const input: Parameters<typeof renderThumbnail>[0] = {
+        frameUri: frame,
+        line1,
+        line2,
+        badge: badge.trim() || undefined,
+        layout: isShort ? 'short' : 'long',
+      } as any;
+      const pack = await ensureHootPack();
+      input.mascotUri = pack.idle;
+      input.slug = project.slug;
+      const uri = await renderThumbnail(input);
+      // The file name never changes, so bust the image cache on every redraw.
+      setPreview(`${uri}?v=${Date.now()}`);
+      patchAssets(project.id, { thumbnail: uri });
+    } catch (e) {
+      Alert.alert('Could not draw the thumbnail', e instanceof Error ? e.message : String(e));
+    } finally {
+      setDrawing(false);
+    }
+  };
+
   const save = async () => {
+    if (!preview) {
+      Alert.alert('Draw it first', 'Render the thumbnail before saving it to your gallery.');
+      return;
+    }
     setSaving(true);
     try {
-      // Capture at the real YouTube canvas size so the exported PNG is upload-ready.
-      const node = shotRef.current;
-      if (!node) throw new Error('Preview is not ready yet.');
-      const tmpUri = await node.capture();
-
-      const target = bucketFile('thumbnails', project.slug, 'thumbnail.png');
-      if (target.exists) target.delete();
-      await new File(tmpUri).copy(target);
-
-      patchAssets(project.id, { thumbnail: target.uri });
-
-      const permission = await MediaLibrary.requestPermissionsAsync();
-      if (permission.granted) {
-        await MediaLibrary.saveToLibraryAsync(target.uri);
-        Alert.alert('Saved', 'Thumbnail saved to the workspace and your gallery.');
-      } else {
-        Alert.alert('Saved', 'Thumbnail saved to the project workspace.');
-      }
+      const where = await saveToGallery(preview.split('?')[0]);
+      Alert.alert(
+        'Saved',
+        where === 'gallery' ? 'Thumbnail saved to the workspace and your gallery.' : 'Thumbnail saved to the project workspace.'
+      );
     } catch (e) {
       Alert.alert('Save failed', e instanceof Error ? e.message : String(e));
     } finally {
@@ -86,13 +121,38 @@ export default function ThumbnailScreen() {
     }
   };
 
-  const background = candidates[selected];
+  const sendToYouTube = async () => {
+    const videoId = project.assets.youtubeVideoId;
+    const thumbnail = project.assets.thumbnail;
+    if (!videoId || !thumbnail) return;
+    setSending(true);
+    try {
+      const [raw, clientId] = await Promise.all([getKey('youtubeTokens'), getKey('youtubeClientId')]);
+      if (!raw || !clientId) throw new Error('Sign in to YouTube on the Publish screen first.');
+      const tokens = await ensureFreshToken(clientId, JSON.parse(raw));
+      await setKey('youtubeTokens', JSON.stringify(tokens));
+      await setThumbnail(tokens.accessToken, videoId, thumbnail);
+      Alert.alert('Thumbnail set', 'YouTube now uses this thumbnail. It can take a few minutes to show everywhere.');
+    } catch (e) {
+      Alert.alert('Thumbnail not set', e instanceof Error ? e.message : String(e));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const wordCount = longBank ? textWords(`${line1} ${line2}`).length : 0;
 
   return (
     <Screen>
+      {longBank ? <TestAndCompare projectId={project.id} /> : null}
+
       <Card>
         <H2>Thumbnail studio</H2>
-        <Small>Two-line high-impact formula: white top line, gold bottom line, 7.4% safe margins.</Small>
+        <Small>
+          {isShort
+            ? "The channel's 16:9 card: the frame blurred behind, sharp down the middle, a yellow first line over a white second, and Hoot breaking the panel at the bottom."
+            : 'The deep-dive card: the frame filling the whole thumbnail, a large yellow first line over a white second on the left, and Hoot in the bottom-right corner.'}
+        </Small>
       </Card>
 
       <Card>
@@ -100,12 +160,21 @@ export default function ThumbnailScreen() {
           <H3>Candidate frames</H3>
           <Badge label={`${candidates.length} sampled`} tone={candidates.length ? 'ok' : 'neutral'} />
         </Row>
+        {project.assets.finalVideo ? null : (
+          <Small style={{ color: colors.warn }}>
+            No rendered video for this project yet — assemble it first and the frames come from that.
+          </Small>
+        )}
         <Button
-          label={sampling ? 'Sampling…' : 'Sample frames at 25 / 50 / 75%'}
+          label={sampling ? 'Sampling…' : 'Sample 5 frames from the video'}
           variant="secondary"
           loading={sampling}
+          disabled={!project.assets.finalVideo}
           onPress={sample}
         />
+        {!sampling && sampled && !candidates.length ? (
+          <Small style={{ color: colors.warn }}>No frames could be read from that video. Re-render it and try again.</Small>
+        ) : null}
         {candidates.length ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: space.sm }}>
             <Row>
@@ -124,39 +193,264 @@ export default function ThumbnailScreen() {
 
       <Card>
         <H3>Preview</H3>
-        <ViewShot
-          ref={shotRef}
-          style={[s.canvas, { aspectRatio: aspect }]}
-          options={{
-            format: 'png',
-            quality: 1,
-            width: isShort ? 1080 : 1920,
-            height: isShort ? 1920 : 1080,
-          }}
-        >
-          {background ? (
-            <Image source={{ uri: background }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          ) : (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: '#12161f' }]} />
-          )}
-          <View style={s.scrim} />
-          <View style={s.textBlock}>
-            {line1 ? <Text style={[s.line, s.line1, isShort && s.lineShort]}>{line1.toUpperCase()}</Text> : null}
-            {line2 ? (
-              <View style={s.line2Box}>
-                <Text style={[s.line, s.line2, isShort && s.lineShort]}>{line2.toUpperCase()}</Text>
-              </View>
-            ) : null}
+        {preview ? (
+          <Image source={{ uri: preview }} style={[s.canvas, { aspectRatio: THUMB_W / THUMB_H }]} />
+        ) : (
+          <View style={[s.canvas, { aspectRatio: THUMB_W / THUMB_H, alignItems: 'center', justifyContent: 'center' }]}>
+            <Small>Pick a frame, then draw the thumbnail.</Small>
           </View>
-        </ViewShot>
+        )}
+        <Button label={drawing ? 'Drawing…' : 'Draw thumbnail'} variant="secondary" loading={drawing} onPress={draw} />
       </Card>
 
       <Card>
-        <Field label="Line 1 (white)" value={line1} onChangeText={setLine1} autoCapitalize="characters" />
-        <Field label="Line 2 (gold)" value={line2} onChangeText={setLine2} autoCapitalize="characters" />
+        <Field label="Line 1 (yellow)" value={line1} onChangeText={setLine1} autoCapitalize="characters" />
+        <Field label="Line 2 (white)" value={line2} onChangeText={setLine2} autoCapitalize="characters" />
+        {longBank && wordCount > 4 ? (
+          <Small style={{ color: colors.warn }}>
+            {wordCount} words: a long-form thumbnail carries 4 at most, with Hoot (CR-51).
+          </Small>
+        ) : null}
+        <Field label="Badge" value={badge} onChangeText={setBadge} autoCapitalize="characters" />
         <Button label={saving ? 'Saving…' : 'Save thumbnail'} loading={saving} onPress={save} />
       </Card>
+
+      {project.assets.youtubeVideoId ? (
+        <Card>
+          <H3>Already on YouTube</H3>
+          <Small>
+            {project.assets.thumbnail
+              ? 'This video is uploaded. Put the thumbnail you drew on it — you can redraw and send it again any time.'
+              : 'This video is uploaded. Draw a thumbnail above, then send it to the video from here.'}
+          </Small>
+          <Button
+            label={sending ? 'Sending…' : 'Set as the YouTube thumbnail'}
+            loading={sending}
+            disabled={!project.assets.thumbnail}
+            onPress={sendToYouTube}
+          />
+        </Card>
+      ) : (
+        <Small>Publishing the video sends this thumbnail with it.</Small>
+      )}
     </Screen>
+  );
+}
+
+/**
+ * A banked long-form's A/B/C thumbnails for YouTube's Test & Compare: each is
+ * drawn from imported art (or the older Hoot template), and one is picked to
+ * upload with the video.
+ */
+function TestAndCompare({ projectId }: { projectId: string }) {
+  const project = useStudio((s) => s.projects.find((p) => p.id === projectId));
+  const patchAssets = useStudio((s) => s.patchAssets);
+  const [busy, setBusy] = useState<'draw' | 'save' | null>(null);
+  const [version, setVersion] = useState(0);
+  const mounted = useMounted();
+
+  if (!project || project.mode !== 'long') return null;
+  const bank = (project.script as any).bankV2;
+  if (!bank) return null;
+
+  const variants = thumbnailVariants(bank);
+  const assets: any = project.assets;
+  const drawn: Record<string, string> = assets.thumbnailsV2 ?? {};
+  const props: Record<string, string> = assets.thumbnailProps ?? {};
+  const art: Record<string, string> = assets.thumbnailArt ?? {};
+
+  const drawAll = async () => {
+    setBusy('draw');
+    try {
+      const out: Record<string, string> = {};
+      for (const v of variants) {
+        out[v.variant] = await renderThumbnailV2({
+          slug: project.slug,
+          variant: v,
+          propUri: props[v.variant],
+          artUri: art[v.variant],
+        });
+      }
+      const first = out[variants[0].variant];
+      patchAssets(project.id, {
+        thumbnailsV2: out,
+        ...(first && !project.assets.thumbnail ? { thumbnail: first } : {}),
+      } as any);
+      if (mounted.current) setVersion(Date.now());
+    } catch (e) {
+      Alert.alert('Could not draw the thumbnails', e instanceof Error ? e.message : String(e));
+    } finally {
+      if (mounted.current) setBusy(null);
+    }
+  };
+
+  const importArt = async (variant: string) => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission needed', 'Allow media access to import the thumbnail art.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
+    if (result.canceled || !result.assets?.length) return;
+    try {
+      const asset = result.assets[0];
+      const ext = (asset.fileName?.split('.').pop() ?? 'png').toLowerCase().replace('jpeg', 'jpg');
+      const uri = await importInto('thumbnails', project.slug, asset.uri, `art_${variant}.${ext}`);
+      patchAssets(project.id, { thumbnailArt: { ...art, [variant]: uri } } as any);
+      if (asset.width && asset.height && Math.abs(asset.width / asset.height - 16 / 9) > 0.03) {
+        Alert.alert(
+          'Check the shape',
+          `The art is ${asset.width}x${asset.height}, not 16:9. It is cropped to fill; generate it in landscape 16:9 for the whole picture.`
+        );
+      }
+    } catch (e) {
+      Alert.alert('Import failed', e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const importProp = async (variant: string) => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission needed', 'Allow media access to import the prop picture.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
+    if (result.canceled || !result.assets?.length) return;
+    try {
+      const asset = result.assets[0];
+      const ext = (asset.fileName?.split('.').pop() ?? 'png').toLowerCase().replace('jpeg', 'jpg');
+      const uri = await importInto('thumbnails', project.slug, asset.uri, `prop_${variant}.${ext}`);
+      patchAssets(project.id, { thumbnailProps: { ...props, [variant]: uri } } as any);
+    } catch (e) {
+      Alert.alert('Import failed', e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const saveAll = async () => {
+    setBusy('save');
+    try {
+      let saved = 0;
+      for (const uri of Object.values(drawn)) {
+        if (!uri) continue;
+        if ((await saveToGallery(uri)) === 'gallery') saved++;
+      }
+      Alert.alert(
+        'Saved',
+        saved ? `${saved} thumbnails saved to your gallery for Test & Compare in Studio.` : 'Saved to the project workspace.'
+      );
+    } catch (e) {
+      Alert.alert('Save failed', e instanceof Error ? e.message : String(e));
+    } finally {
+      if (mounted.current) setBusy(null);
+    }
+  };
+
+  return (
+    <Card>
+      <H2>Test & Compare thumbnails</H2>
+      <Small>
+        CR-88G: import each variant's art (the 16:9 picture made from thumbnail_prompts.txt, LF03-T1 and LF03-T2) and it
+        is drawn full-bleed and sharp, with the 2 to 4 word text outlined in the lower left: no Hoot, no badge, no blur
+        or darkening. Without art, the older template (Hoot on white or black) is drawn. Upload the variants in Studio →
+        Test & Compare.
+      </Small>
+      <Button
+        label={busy === 'draw' ? 'Drawing…' : `Draw all ${variants.length}`}
+        loading={busy === 'draw'}
+        variant="secondary"
+        onPress={() => void drawAll()}
+      />
+
+      {variants.map((v) => {
+        const words = v.words.map((w) => w.word.toUpperCase());
+        const lines = words.length > 2
+          ? [words.slice(0, Math.ceil(words.length / 2)).join(' '), words.slice(Math.ceil(words.length / 2)).join(' ')]
+          : [words.join(' ')];
+        const size = fullBleedFontSize(lines, (text, px) => text.length * px * 0.5);
+        const legibility = thumbnailLegibility(words.length, art[v.variant] ? size : 100);
+
+        return (
+          <View key={v.variant} style={{ marginTop: space.sm }}>
+            <Row style={{ justifyContent: 'space-between' }}>
+              <H3>
+                {v.variant} · {art[v.variant] ? 'full-bleed art' : `${v.background} · Hoot ${v.pose}`}
+              </H3>
+              {project.assets.thumbnail && project.assets.thumbnail === drawn[v.variant] ? (
+                <Badge label="UPLOADS WITH VIDEO" tone="ok" />
+              ) : null}
+            </Row>
+            <Small>
+              {v.text.replace(/\*/g, '')}
+              {v.concept ? ` — ${v.concept}` : ''}
+            </Small>
+            {drawn[v.variant] ? (
+              <Pressable onPress={() => patchAssets(project.id, { thumbnail: drawn[v.variant] })}>
+                <Image
+                  source={{ uri: `${drawn[v.variant]}?v=${version}` }}
+                  style={[s.canvas, { aspectRatio: THUMB_W / THUMB_H }]}
+                />
+              </Pressable>
+            ) : null}
+            {drawn[v.variant] ? (
+              <Row style={{ gap: space.sm, alignItems: 'center', marginTop: space.xs }}>
+                <Image
+                  source={{ uri: `${drawn[v.variant]}?v=${version}` }}
+                  style={{
+                    width: PREVIEW_WIDTH,
+                    height: Math.round((PREVIEW_WIDTH * THUMB_H) / THUMB_W),
+                    borderRadius: 4,
+                  }}
+                />
+                <Small style={{ flex: 1, color: legibility.ok ? colors.textDim : colors.danger }}>
+                  {legibility.message} (estimate)
+                </Small>
+              </Row>
+            ) : null}
+            <Row style={{ gap: space.xs }}>
+              <Button
+                label={art[v.variant] ? 'Replace art' : 'Import art (16:9)'}
+                variant="ghost"
+                onPress={() => void importArt(v.variant)}
+              />
+              {art[v.variant] ? (
+                <Button
+                  label="Remove art"
+                  variant="ghost"
+                  onPress={() => patchAssets(project.id, { thumbnailArt: { ...art, [v.variant]: undefined } } as any)}
+                />
+              ) : null}
+            </Row>
+            <Row style={{ gap: space.xs }}>
+              <Button
+                label={props[v.variant] ? 'Replace prop' : 'Import a prop'}
+                variant="ghost"
+                onPress={() => void importProp(v.variant)}
+              />
+              {props[v.variant] ? (
+                <Button
+                  label="Remove prop"
+                  variant="ghost"
+                  onPress={() => patchAssets(project.id, { thumbnailProps: { ...props, [v.variant]: undefined } } as any)}
+                />
+              ) : null}
+            </Row>
+          </View>
+        );
+      })}
+
+      <Small>
+        A prop is optional: make it in the Gemini app from the concept, square, on a plain{' '}
+        {variants.some((v) => v.background === 'black') ? 'white (or transparent, for black)' : 'white'} background, and
+        it is drawn behind Hoot. Tap a thumbnail to send that one with the upload.
+      </Small>
+      {Object.keys(drawn).length ? (
+        <Button
+          label={busy === 'save' ? 'Saving…' : 'Save all to the gallery'}
+          loading={busy === 'save'}
+          onPress={() => void saveAll()}
+        />
+      ) : null}
+    </Card>
   );
 }
 
@@ -183,23 +477,5 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#000',
     justifyContent: 'flex-end',
-  },
-  scrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(5,7,11,0.35)' },
-  textBlock: { padding: '7.4%', gap: 6 },
-  line: { fontWeight: '900', letterSpacing: -0.5, fontSize: 30, lineHeight: 34 },
-  lineShort: { fontSize: 26, lineHeight: 30 },
-  line1: {
-    color: '#ffffff',
-    textShadowColor: 'rgba(0,0,0,0.9)',
-    textShadowOffset: { width: 2, height: 3 },
-    textShadowRadius: 6,
-  },
-  line2: { color: colors.accent },
-  line2Box: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(5,7,11,0.75)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: radius.sm,
   },
 });
