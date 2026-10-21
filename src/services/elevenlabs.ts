@@ -89,6 +89,8 @@ interface SynthesiseOptions {
   modelId?: string;
   /** Voice speed (ElevenLabs voice_settings.speed); 1 is the default pace. */
   speed?: number;
+  /** Stability, similarity (clarity) and style, 0 to 1; the defaults when absent. */
+  settings?: { stability: number; similarity: number; style: number };
   signal?: AbortSignal;
 }
 
@@ -100,7 +102,13 @@ interface SynthesiseOptions {
  */
 export async function synthesiseChapter(opts: SynthesiseOptions): Promise<SynthesisResult> {
   const modelId = opts.modelId ?? 'eleven_multilingual_v2';
-  const key = await audioCache.cacheKey({ text: opts.text, voiceId: opts.voiceId, modelId, speed: opts.speed });
+  const key = await audioCache.cacheKey({
+    text: opts.text,
+    voiceId: opts.voiceId,
+    modelId,
+    speed: opts.speed,
+    ...(opts.settings ? { settings: opts.settings } : {}),
+  });
 
   // Identical text in the same voice was already paid for once. Serve it from
   // disk rather than billing again.
@@ -132,9 +140,9 @@ export async function synthesiseChapter(opts: SynthesiseOptions): Promise<Synthe
       text: opts.text,
       model_id: modelId,
       voice_settings: {
-        stability: 0.5,
-        similarity_boost: 0.75,
-        style: 0.0,
+        stability: opts.settings?.stability ?? 0.5,
+        similarity_boost: opts.settings?.similarity ?? 0.75,
+        style: opts.settings?.style ?? 0.0,
         use_speaker_boost: true,
         ...(opts.speed && opts.speed !== 1 ? { speed: opts.speed } : {}),
       },

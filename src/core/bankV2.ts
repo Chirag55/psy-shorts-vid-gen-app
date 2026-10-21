@@ -1,6 +1,7 @@
 import yaml from 'yaml';
 import { isHootPose, poseNamedIn, type HootPose } from './hoot';
 import { LF_CATCHPHRASE } from './longformPlan';
+import { parseSubtitles, parseVoiceSettings } from './viralBatch';
 
 /**
  * Topic bank v2 parser. A bank is a markdown export: one `### ID — Title`
@@ -43,6 +44,7 @@ const SHORT_FIELDS = new Set([
   'pinned_comment', 'settings_pool', 'insert_props', 'metaphor', 'hook_alt', 'title_alt', 'description_line', 'source_line', 'visual_beats',
   'bank_id', 'priority', 'queue', 'title_final', 'description_full', 'evidence', 'ig_keywords', 'ig_line1', 'ig_hashtags', 'ig_first_comment',
   'clip_ids', 'still_ids', 'mood', 'audit', 'hook_text_pov', 'test_profile', 'test_hook', 'shots', 'est_seconds', 'compliance', 'character_looks',
+  'viral_batch', 'upload_order', 'voice_settings', 'subtitles', 'bottom_overlay', 'thumb_text', 'thumb_visual',
 ]);
 
 /** Fields a reader may find on either kind (accepted without a warning in the other kind's block). */
@@ -242,6 +244,20 @@ function metaFields(f: Record<string, any>, line: number, id: string, issues: Ba
   assign('audit', text(f.audit));
   assign('hook_text_pov', text(f.hook_text_pov));
   assign('compliance', text(f.compliance));
+  assign('viral_batch', text(f.viral_batch));
+  assign('upload_order', text(f.upload_order));
+  assign('voice_settings', text(f.voice_settings));
+  assign('bottom_overlay', text(f.bottom_overlay));
+  assign('thumb_text', text(f.thumb_text));
+  assign('thumb_visual', text(f.thumb_visual));
+  if (f.subtitles !== undefined) {
+    const { cues, bad: wrong } = parseSubtitles(lines(f.subtitles) ?? []);
+    if (wrong.length) bad(`"subtitles" lines must read "0:00-0:02.5 | text" (${wrong.length} do not)`);
+    else assign('subtitles', cues);
+  }
+  if (f.voice_settings !== undefined && !parseVoiceSettings(String(f.voice_settings))) {
+    bad('"voice_settings" names no stability, clarity, style or speed');
+  }
   if (Array.isArray(f.character_looks)) assign('character_looks', f.character_looks.map((s: unknown) => String(s).trim()).filter(Boolean));
   for (const key of ['shots', 'est_seconds']) {
     if (f[key] === undefined) continue;

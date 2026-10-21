@@ -4,6 +4,7 @@ import type { ScheduleConfig } from './channelConfig';
 import { addDays, localParts, upcomingSlots, type Release } from './schedule';
 import { isSceneFirst, shortFormatProblems } from './shortFormat';
 import { isV2 } from './topicBank';
+import { isViral, viralOf } from './viralBatch';
 
 /** One Short placed on a calendar day. */
 export interface RotationItem {
@@ -27,6 +28,8 @@ function asItem(e: any): { id: string; format?: string; pillar?: string } {
 
 /** Format and pillar clashes if `entry` went out on `day` alongside `placed`. */
 export function rotationProblems(entry: any, day: string, placed: RotationItem[]): string[] {
+  // A9: a viral batch Short keeps its slot; the batch runs back to back in one cluster.
+  if (isViral(entry)) return [];
   const out: string[] = [];
   const byDay = new Map<string, RotationItem>();
   for (const p of placed) if (p.id !== entry.id) byDay.set(p.day, p);
@@ -82,7 +85,13 @@ export function blockReasons(entry: any): string[] {
   return problems;
 }
 
-/** Unused v2 Shorts ready to plan, best first. */
+/** Viral batch Shorts by batch position, everything else after. */
+function viralRank(e: any): number {
+  const v = viralOf(e);
+  return v ? (v.queue ?? v.position) : Number.MAX_SAFE_INTEGER;
+}
+
+/** Unused v2 Shorts ready to plan, best first (a viral batch first, in its order). */
 export function plannableShorts(entries: any[]): any[] {
   return entries
     .filter(
@@ -96,6 +105,7 @@ export function plannableShorts(entries: any[]): any[] {
     )
     .sort(
       (a, b) =>
+        viralRank(a) - viralRank(b) ||
         (a.priority ? PRIORITY_RANK[a.priority] : PRIORITY_RANK.B) -
           (b.priority ? PRIORITY_RANK[b.priority] : PRIORITY_RANK.B) ||
         (a.queue ?? Number.MAX_SAFE_INTEGER) - (b.queue ?? Number.MAX_SAFE_INTEGER) ||

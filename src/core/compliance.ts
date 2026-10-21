@@ -4,6 +4,7 @@
  * scenes. Rebuilt from 6.1.13.
  */
 import { neutralHits } from './neutralLint';
+import { viralProblems } from './viralBatch';
 
 export const SIGN_OFF = "...and that's the mind for you. Stay curious, stay sharp.";
 const CITE_SHORT_RE =
@@ -35,6 +36,11 @@ export const LINE_PAUSE_S = 0.4;
 
 /** Audit codes waived per entry after a manual review. */
 export const WAIVE: Record<string, string[]> = {
+  'MF-S-D43': ['S1', 'S13', 'S2', 'S3', 'S5', 'S6', 'V1'],
+  'MF-S-D19': ['S1', 'S13', 'S2', 'S3', 'S5', 'S6', 'V1'],
+  'MF-S-D23': ['S1', 'S13', 'S2', 'S3', 'S5', 'S6', 'V1'],
+  'MF-S-D61': ['S1', 'S13', 'S2', 'S3', 'S5', 'S6', 'V1'],
+  'MF-S-D16': ['S1', 'S13', 'S2', 'S3', 'S5', 'S6', 'V1'],
   'MF-S-D69': ['S1', 'S13', 'S2', 'S5', 'S6'],
   'MF-S-D72': ['S13', 'S2', 'S5', 'S6'],
   'MF-S-D73': ['S1', 'S13', 'S5', 'S6'],
@@ -109,7 +115,9 @@ export function checkShots(lines: string[], looks: string[] = []): string[] {
   out.push(...skinLooks(looks));
   if (missing.length) out.push(`V8 character look missing for [${missing.join(', ')}]`);
   const texts = parsed.map((p) => (p ? `${p.setting} ${p.action}` : ''));
-  for (const name of LOOK_NAMES) {
+  // CR-91E: only the lead (the first look line) must show up in shot 1 or 2.
+  const lead = looks.map((l) => l.split(',')[0].trim()).slice(0, 1);
+  for (const name of lead) {
     const first = texts.findIndex((t) => new RegExp(`\\b${name}\\b`).test(t));
     if (first > 1) out.push(`V9 ${name} first appears in shot ${first + 1} (must appear in shot 1 or 2)`);
   }
@@ -406,6 +414,7 @@ export function complianceOf(e: any): string[] | null {
         looks: e.character_looks,
         blob: [e.narration, e.description_full ?? '', ...(e.visual_beats ?? [])].join(' '),
       });
+      problems.push(...viralProblems(e));
     }
   }
   const waived = WAIVE[e.id ?? ''];

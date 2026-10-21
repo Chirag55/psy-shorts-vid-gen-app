@@ -10,6 +10,10 @@ import { useStudio } from '@/store';
 import { sampleThumbnailFrames } from '@/services/assembler';
 import { renderThumbnail, THUMB_H, THUMB_W } from '@/services/thumbnailRenderer';
 import { renderThumbnailV2 } from '@/services/thumbnailV2';
+import { renderViralThumbnail } from '@/services/thumbnailViral';
+import { generateStill } from '@/services/imagen';
+import { viralBadge, viralThumbnailPrompt, type ViralInfo } from '@/core/viralBatch';
+import * as Clipboard from 'expo-clipboard';
 import { fullBleedFontSize, PREVIEW_WIDTH, thumbnailLegibility, thumbnailVariants } from '@/core/thumbnailLayout';
 import { importInto } from '@/services/workspace';
 import { useMounted } from '@/util/useMounted';
@@ -145,6 +149,7 @@ export default function ThumbnailScreen() {
   return (
     <Screen>
       {longBank ? <TestAndCompare projectId={project.id} /> : null}
+      {shortBank?.viral ? <ViralThumbnail projectId={project.id} /> : null}
 
       <Card>
         <H2>Thumbnail studio</H2>
@@ -234,6 +239,137 @@ export default function ThumbnailScreen() {
         <Small>Publishing the video sends this thumbnail with it.</Small>
       )}
     </Screen>
+  );
+}
+
+/**
+ * An A9 viral Short's thumbnail: 9:16 artwork made from the bank's thumbnail
+ * prompt (generated here or imported), with the thumb text drawn top-centre.
+ */
+function ViralThumbnail({ projectId }: { projectId: string }) {
+  const project = useStudio((s) => s.projects.find((p) => p.id === projectId));
+  const patchAssets = useStudio((s) => s.patchAssets);
+  const viral: ViralInfo | undefined = (project?.script as any)?.bankV2?.viral;
+  const [text, setText] = useState(viral?.thumbText ?? '');
+  const [busy, setBusy] = useState<'generate' | 'draw' | null>(null);
+  const [version, setVersion] = useState(0);
+  const mounted = useMounted();
+
+  if (!project || !viral) return null;
+  const assets: any = project.assets;
+  const art: string | undefined = assets.thumbnailArt?.viral;
+  const drawn: string | undefined = assets.thumbnailViral;
+  const prompt = viralThumbnailPrompt(viral);
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+
+  const setArt = (uri: string) => patchAssets(project.id, { thumbnailArt: { ...(assets.thumbnailArt ?? {}), viral: uri } } as any);
+
+  const generate = async () => {
+    setBusy('generate');
+    try {
+      const apiKey = await getKey('gemini');
+      if (!apiKey) throw new Error('Imagen uses the Gemini key. Add it in Settings, or import the artwork.');
+      const uri = await generateStill({
+        apiKey,
+        prompt,
+        slug: project.slug,
+        key: 'thumb_viral',
+        model: useStudio.getState().settings.imageModel,
+        aspectRatio: '9:16',
+      });
+      setArt(uri);
+      if (mounted.current) setVersion(Date.now());
+    } catch (e) {
+      Alert.alert('Artwork not generated', e instanceof Error ? e.message : String(e));
+    } finally {
+      if (mounted.current) setBusy(null);
+    }
+  };
+
+  const importArt = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission needed', 'Allow media access to import the thumbnail art.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
+    if (result.canceled || !result.assets?.length) return;
+    try {
+      const asset = result.assets[0];
+      const ext = (asset.fileName?.split('.').pop() ?? 'png').toLowerCase().replace('jpeg', 'jpg');
+      setArt(await importInto('thumbnails', project.slug, asset.uri, `art_viral.${ext}`));
+      if (asset.width && asset.height && Math.abs(asset.width / asset.height - 9 / 16) > 0.03) {
+        Alert.alert(
+          'Check the shape',
+          `The art is ${asset.width}x${asset.height}, not 9:16. It is cropped to fill; generate it in portrait 9:16 for the whole picture.`
+        );
+      }
+      if (mounted.current) setVersion(Date.now());
+    } catch (e) {
+      Alert.alert('Import failed', e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const draw = async () => {
+    if (!art) return;
+    setBusy('draw');
+    try {
+      const uri = await renderViralThumbnail({ slug: project.slug, artUri: art, text });
+      patchAssets(project.id, { thumbnail: uri, thumbnailViral: uri } as any);
+      if (mounted.current) setVersion(Date.now());
+    } catch (e) {
+      Alert.alert('Could not draw the thumbnail', e instanceof Error ? e.message : String(e));
+    } finally {
+      if (mounted.current) setBusy(null);
+    }
+  };
+
+  return (
+    <Card>
+      <Row style={{ justifyContent: 'space-between' }}>
+        <H3>Viral thumbnail</H3>
+        <Badge label={viralBadge(viral)} tone="warn" />
+      </Row>
+      <Small>
+        9:16 artwork from the bank's thumbnail prompt, with the thumb text top-centre in bold white with a black stroke
+        (3 words at most). Publishing sends this thumbnail with the Short.
+      </Small>
+      {prompt ? (
+        <>
+          <Small style={{ color: colors.textFaint }}>
+            {prompt}
+          </Small>
+          <Button label="Copy the prompt" variant="secondary" onPress={() => void Clipboard.setStringAsync(prompt)} />
+        </>
+      ) : (
+        <Small style={{ color: colors.warn }}>This Short has no thumb_visual, so there is no prompt.</Small>
+      )}
+      <Row>
+        <Button
+          label={busy === 'generate' ? 'Generating…' : 'Generate artwork'}
+          variant="secondary"
+          loading={busy === 'generate'}
+          disabled={!prompt || busy !== null}
+          onPress={generate}
+        />
+        <Button label="Import artwork" variant="secondary" disabled={busy !== null} onPress={importArt} />
+      </Row>
+      {art ? <Image source={{ uri: `${art}?v=${version}` }} style={[s.canvas, { aspectRatio: 9 / 16, width: '50%' }]} /> : null}
+      <Field label="Thumb text" value={text} onChangeText={setText} autoCapitalize="characters" />
+      {words > 3 ? <Small style={{ color: colors.warn }}>{words} words: the viral thumbnail carries 3 at most.</Small> : null}
+      <Button
+        label={busy === 'draw' ? 'Drawing…' : 'Draw viral thumbnail'}
+        loading={busy === 'draw'}
+        disabled={!art || !text.trim() || busy !== null}
+        onPress={draw}
+      />
+      {drawn ? (
+        <>
+          <Image source={{ uri: `${drawn}?v=${version}` }} style={[s.canvas, { aspectRatio: 9 / 16, width: '60%' }]} />
+          <Button label="Save to gallery" variant="secondary" onPress={() => void saveToGallery(drawn)} />
+        </>
+      ) : null}
+    </Card>
   );
 }
 

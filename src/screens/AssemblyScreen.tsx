@@ -13,6 +13,7 @@ import { loudnessOk } from '@/core/renderRules';
 import { titleCache } from '@/core/discovery';
 import { ORIGINALITY_CHECKLIST } from '@/core/originality';
 import type { RootStackParamList } from '@/navigation/types';
+import { BOTTOM_OVERLAY_SECONDS, viralBadge, type ViralInfo } from '@/core/viralBatch';
 
 export default function AssemblyScreen() {
   const { id } = useRoute<RouteProp<RootStackParamList, 'Assembly'>>().params;
@@ -158,6 +159,8 @@ export default function AssemblyScreen() {
     }
   };
 
+  const viral: ViralInfo | undefined = project.mode === 'short' ? (project.script as any).bankV2?.viral : undefined;
+
   return (
     <Screen>
       <Card>
@@ -168,6 +171,29 @@ export default function AssemblyScreen() {
             : 'Every chapter is synced and captioned against its own audio before anything is concatenated, so drift cannot compound.'}
         </Small>
       </Card>
+
+      {viral ? (
+        <Card>
+          <Row style={{ justifyContent: 'space-between' }}>
+            <H3>Viral batch</H3>
+            <Badge label={viralBadge(viral)} tone="warn" />
+          </Row>
+          <Small>
+            The shots run in storyboard order at an even pace, the bank's subtitles are burned into the centre third in
+            place of the captions and text cards, and the audio cuts on the last syllable so it loops into 0:00.
+          </Small>
+          {viral.subtitles.map((c, i) => (
+            <Small key={i} style={{ color: colors.text }}>
+              {c.start.toFixed(1)}–{c.end.toFixed(1)} s · {c.text}
+            </Small>
+          ))}
+          {viral.bottomOverlay ? (
+            <Small>
+              Last {BOTTOM_OVERLAY_SECONDS} s, small at the bottom: {viral.bottomOverlay}
+            </Small>
+          ) : null}
+        </Card>
+      ) : null}
 
       <Card>
         <H3>Options</H3>

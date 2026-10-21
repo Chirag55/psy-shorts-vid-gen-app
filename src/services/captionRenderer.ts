@@ -355,9 +355,15 @@ export async function renderTextCard(opts: {
   slug: string;
   name: string;
   rightPadding?: number;
+  /** Keep the text's own case (subtitles carry their emphasis in capitals). */
+  keepCase?: boolean;
+  /** Starting font size at 1080 wide; shrinks until the text fits. */
+  fontSize?: number;
+  maxLines?: number;
 }): Promise<{ uri: string; width: number; height: number } | null> {
-  const text = opts.text.trim().toUpperCase();
+  const text = opts.keepCase ? opts.text.trim() : opts.text.trim().toUpperCase();
   if (!text) return null;
+  const maxLines = opts.maxLines ?? 2;
   await preloadCaptionFont();
   const { Skia, PaintStyle, ImageFormat } = skia();
   const scale = opts.width / 1080;
@@ -366,7 +372,7 @@ export async function renderTextCard(opts: {
   const maxWidth = opts.width - pad - right;
   const tokens = text.split(/\s+/).map((t) => ({ text: t, active: /^\d+[.)]?$/.test(t) }));
   const frame = { start: 0, end: 1, tokens } as CaptionFrame;
-  let size = Math.round(112 * scale);
+  let size = Math.round((opts.fontSize ?? 112) * scale);
   let font = loadFont(size);
   let lines: Line[] = [];
   for (let attempt = 0; attempt < 12; attempt++) {
@@ -374,7 +380,7 @@ export async function renderTextCard(opts: {
     font.setScaleX(1.21);
     const space = font.measureText(' ').width || size * 0.3;
     const candidate = layout(frame, font, maxWidth, space, size * 0.55, 99);
-    if (candidate.length <= 2 && candidate.every((l) => l.width <= maxWidth)) {
+    if (candidate.length <= maxLines && candidate.every((l) => l.width <= maxWidth)) {
       lines = candidate;
       break;
     }
@@ -382,7 +388,7 @@ export async function renderTextCard(opts: {
   }
   if (!lines.length) {
     const space = font.measureText(' ').width || size * 0.3;
-    lines = layout(frame, font, maxWidth, space, size * 0.55, 2);
+    lines = layout(frame, font, maxWidth, space, size * 0.55, maxLines);
   }
   const outline = Math.max(2, Math.round(size * 0.23));
   const lineHeight = size + Math.round(14 * scale);

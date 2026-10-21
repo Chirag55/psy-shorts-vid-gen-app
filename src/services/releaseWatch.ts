@@ -3,6 +3,7 @@ import { backfillReport, runDueChecks, watchFinished, type ReleaseWatch, type Up
 import { getKey, setKey } from './keys';
 import { ensureFreshToken, fetchChannel, fetchVideoStates, listAllUploadIds } from './youtube';
 import { cancelNotification, notifyAt, notifyNow } from './notifications';
+import { postPinnedComment } from './pinnedComment';
 
 /** Uploads checked first in a backfill, in this order. */
 export const BACKFILL_FIRST = ['ctvzHXK_IuQ', 'JpQpI8gAyYU'];
@@ -74,6 +75,11 @@ async function doChecks(now: Date): Promise<{ checked: number; alerts: number; s
       ...next,
       reminderId: fresh.includes('status') ? undefined : w.reminderId,
     });
+    // A comment that could not go on the private upload goes up once the video is public.
+    const project = w.projectId ? useStudio.getState().projects.find((p) => p.id === w.projectId) : undefined;
+    if (project && !project.commentPosted && s.uploadStatus !== 'deleted') {
+      await postPinnedComment(token, project, w.videoId);
+    }
   }
   return { checked: due.length, alerts };
 }

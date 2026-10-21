@@ -9,6 +9,7 @@ import { getKey } from '@/services/keys';
 import { fetchSubscription, preflight, synthesiseChapter, VOICES } from '@/services/elevenlabs';
 import { checkVoiceQuota } from '@/core/guardrails';
 import { CALM_VOICE_SPEED, paceFor } from '@/core/styleProfiles';
+import type { VoiceSettings } from '@/core/viralBatch';
 import type { LongScript, ShortScript } from '@/core/types';
 import type { RootStackParamList } from '@/navigation/types';
 
@@ -92,6 +93,9 @@ export default function VoiceScreen() {
   );
   const remaining = Math.max(0, quota.ceiling - settings.voiceCharsUsed);
 
+  const viralVoice: VoiceSettings | undefined =
+    project?.mode === 'short' ? (project.script as any).bankV2?.viral?.voice : undefined;
+
   const synthesise = async (track: Track, force: boolean, inBatch = false) => {
     if (busyRef.current) return;
     if (batchRef.current && !inBatch) return;
@@ -141,10 +145,21 @@ export default function VoiceScreen() {
         slug: project.slug,
         key: track.key,
         // A calm Short is read a touch slower; long-form keeps the voice's own pace.
-        speed:
-          project.mode === 'short' && paceFor(settings.narrationPace, project.style) === 'calm'
+        // An A9 viral Short uses the bank's voice settings (urgent, no dead air).
+        speed: viralVoice
+          ? viralVoice.speed
+          : project.mode === 'short' && paceFor(settings.narrationPace, project.style) === 'calm'
             ? CALM_VOICE_SPEED
             : undefined,
+        ...(viralVoice
+          ? {
+              settings: {
+                stability: viralVoice.stability,
+                similarity: viralVoice.similarity,
+                style: viralVoice.style,
+              },
+            }
+          : {}),
       });
       setAudio(project.id, track.key, result.audioUri, result.words);
 
@@ -268,6 +283,13 @@ export default function VoiceScreen() {
 
       <Card>
         <H3>Narrator</H3>
+        {viralVoice ? (
+          <Small style={{ color: colors.accent }}>
+            Viral batch voice: stability {Math.round(viralVoice.stability * 100)}, clarity{' '}
+            {Math.round(viralVoice.similarity * 100)}, style {Math.round(viralVoice.style * 100)}, speed{' '}
+            {viralVoice.speed}. The narration is read word for word, with no sign-off.
+          </Small>
+        ) : null}
         <View style={{ gap: space.xs }}>
           {VOICES.map((v) => {
             const active = (project.voiceId || settings.voiceId) === v.id;

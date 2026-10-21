@@ -6,6 +6,7 @@
 import { contentWords, FIRST_SENTENCE_MAX_WORDS } from './authenticity';
 import { citationHits, spokenBody } from './citations';
 import { neutralHits } from './neutralLint';
+import { VIRAL_SHOTS } from './viralBatch';
 
 export { citationHits, spokenBody };
 
@@ -131,7 +132,7 @@ export function shortFormatProblems(e: SceneFirstFields): { red: string[]; amber
   const shots = (e.visual_beats ?? []).map(parseVisualBeat);
   const cr91 =
     shots.length >= SHOT_COUNT.min &&
-    shots.length <= SHOT_COUNT.max &&
+    shots.length <= (e.viral_batch ? VIRAL_SHOTS : SHOT_COUNT.max) &&
     shots.every((s) => s?.type && /^slow\b/i.test(s.camera));
   if (cr91) {
     const list = shots as VisualBeat[];

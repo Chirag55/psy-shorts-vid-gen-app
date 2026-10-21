@@ -41,12 +41,15 @@ export async function cacheKey(input: {
   modelId: string;
   /** Voice speed; the default (1) is left out so older cache keys stay valid. */
   speed?: number;
+  /** Non-default voice settings (A9 viral Shorts); left out when absent, like speed. */
+  settings?: { stability: number; similarity: number; style: number };
 }): Promise<string> {
   const canonical = JSON.stringify({
     text: input.text.trim(),
     voiceId: input.voiceId,
     modelId: input.modelId,
     ...(input.speed && input.speed !== 1 ? { speed: input.speed } : {}),
+    ...(input.settings ? { settings: input.settings } : {}),
   });
   return Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, canonical);
 }

@@ -15,6 +15,7 @@ import { chapterVisuals, heroChapters } from './hybridPlan';
 import { planFromShotList } from './shotListPlan';
 import { planScreenplay } from './screenplayPlan';
 import { DEFAULT_CHANNEL_CONFIG } from './channelConfig';
+import { viralOf } from './viralBatch';
 
 /** How each Short format opens, for the planner brief. */
 export const FORMAT_OPENINGS: Record<string, string> = {
@@ -249,6 +250,7 @@ export function finishV2Short(e: any, script: any): any {
       ...(e.metaphor ? { metaphor: e.metaphor } : {}),
       ...(e.hook_alt ? { hookAlt: e.hook_alt, hookDefault: script.beats[0]?.text ?? '' } : {}),
       ...(e.title_alt ? { titleAlt: e.title_alt } : {}),
+      ...(viralOf(e) ? { viral: viralOf(e) } : {}),
     },
   };
 }

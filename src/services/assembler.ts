@@ -69,6 +69,7 @@ import {
 } from './ffmpeg';
 import { bucketDir, bucketFile, toFsPath, writeText } from './workspace';
 import { mark, traced } from './breadcrumbs';
+import { BOTTOM_OVERLAY_SECONDS, viralOverlays, type ViralInfo } from '@/core/viralBatch';
 
 const SHORT_W = 1080;
 const SHORT_H = 1920;
@@ -267,6 +268,7 @@ async function prepareCaptions(
  */
 export async function assembleShort(project: Project, opts: AssembleOptions): Promise<string> {
   const script = project.script as any;
+  const viral: ViralInfo | undefined = script.bankV2?.viral;
   const slug = project.slug;
   const W = opts.draft ? 720 : SHORT_W;
   const H = opts.draft ? 1280 : SHORT_H;
@@ -327,7 +329,8 @@ export async function assembleShort(project: Project, opts: AssembleOptions): Pr
       'Line pauses (CR-91): the voice timing does not match the lines word for word, so the pauses were left as voiced',
     ]);
   }
-  const voiceLen = loopCutDuration(pacedWords, spoken);
+  // A9: a viral Short cuts hard on the final syllable so the audio loops into 0:00.
+  const voiceLen = loopCutDuration(pacedWords, spoken, viral ? 0 : undefined);
   const stimHold =
     script.structure === 'test' && script.stimulus && script.stimulus.holdSeconds > 0 && pacedWords.length
       ? script.stimulus.holdSeconds
@@ -522,7 +525,13 @@ export async function assembleShort(project: Project, opts: AssembleOptions): Pr
   filters.push(`[${stage}]tpad=stop_mode=clone:stop_duration=${HOLD_TAIL}[vhold]`);
   stage = 'vhold';
 
-  if (opts.includeCaptions) {
+  if (viral) {
+    // A9: the bank's subtitles replace the narration captions and text cards.
+    opts.onLog?.([
+      `Viral batch ${viral.batch} #${viral.position}: ${viral.subtitles.length} burned-in subtitles, bottom overlay for the last ${BOTTOM_OVERLAY_SECONDS} s`,
+    ]);
+  }
+  if (opts.includeCaptions && !viral) {
     opts.onProgress?.('Drawing captions', 2, 5);
     const captions = await prepareCaptions(project, 'short', 'short', W, H, total, opts, {
       words: finalWords,
@@ -547,7 +556,32 @@ export async function assembleShort(project: Project, opts: AssembleOptions): Pr
     total,
     stimHold ? { start: holdAt, end: holdAt + stimHold } : undefined,
     hookCfg,
-  ).filter((c) => opts.includeCaptions || c.name === 'hook');
+  ).filter((c) => !viral && (opts.includeCaptions || c.name === 'hook'));
+  if (viral) {
+    for (const o of viralOverlays(viral, total)) {
+      const card = await traced(`Drawing the "${o.name}" overlay`, () =>
+        renderTextCard({
+          text: o.text,
+          slug,
+          name: o.name,
+          width: W,
+          keepCase: true,
+          fontSize: o.bottom ? 46 : 78,
+          maxLines: o.bottom ? 2 : 3,
+        }),
+      );
+      if (!card) continue;
+      inputs.push('-i', toFsPath(card.uri));
+      const ci = next++;
+      const out = `vsub${ci}`;
+      const y = o.bottom ? Math.round(H * 0.745) : Math.max(0, Math.round(H * 0.5 - card.height / 2));
+      filters.push(`[${ci}:v]format=rgba[sub${ci}]`);
+      filters.push(
+        `[${stage}][sub${ci}]overlay=0:${y}:enable='between(t,${o.start.toFixed(2)},${o.end.toFixed(2)})'[${out}]`,
+      );
+      stage = out;
+    }
+  }
   for (const c of cards) {
     const card = await traced(`Drawing the "${c.name}" text card`, () =>
       renderTextCard({
@@ -669,7 +703,7 @@ export async function assembleShort(project: Project, opts: AssembleOptions): Pr
       draft: opts.draft,
       width: W,
       height: H,
-      hookText,
+      hookText: viral?.subtitles[0]?.text ?? hookText,
       ...(lufs === undefined ? {} : { lufs }),
       ...(gaps ? { longGaps: gaps.length } : {}),
       ...(paced.removed > 0 ? { pausesCut: Math.round(paced.removed * 100) / 100 } : {}),

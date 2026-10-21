@@ -22,6 +22,9 @@ import { getKey, setKey } from '@/services/keys';
 import { appendToDescription, ensureFreshToken, setThumbnail, shortsUrl, uploadVideo, watchUrl } from '@/services/youtube';
 import { finishLongUpload, longUploadPending } from '@/services/longformPublish';
 import { postPinnedComment } from '@/services/pinnedComment';
+import { pinnedCommentOf } from '@/core/pinnedComment';
+import { withA9Hashtags } from '@/core/viralBatch';
+import { notifyAt } from '@/services/notifications';
 import { canSchedule, longBudget, measuredShortCost, projectItems } from '@/core/flowBudget';
 import { buildChapterTimestamps } from '@/core/timestamps';
 import { withPauseDurations } from '@/core/screenplayPlan';
@@ -573,6 +576,11 @@ export default function PublishScreen() {
       );
       desc = normalized.meta.description;
       tagList = normalized.meta.tags;
+      if ((project.script as any).bankV2?.viral) {
+        // A9: a viral Short's title and description end with exactly these three hashtags.
+        finalTitle = withA9Hashtags(finalTitle);
+        desc = withA9Hashtags(desc);
+      }
 
       const hook =
         project.mode === 'short' ? firstSentence((project.script as ShortScript).beats.map((b) => b.text).join(' ')).text : undefined;
@@ -659,6 +667,26 @@ export default function PublishScreen() {
         });
       }
 
+      // The comment goes up first, seconds after the upload (A9: within 30 s of publishing).
+      const comment = await postPinnedComment(
+        tokens.accessToken,
+        useStudio.getState().projects.find((p) => p.id === project.id) ?? project,
+        uploadedId
+      );
+      const pinText = pinnedCommentOf(project.script);
+      if (publishAt && pinText) {
+        // A scheduled video goes public later: remind at that minute, and the release check retries the comment.
+        void notifyAt(new Date(publishAt), 'Pin the comment now', pinText, { videoId: uploadedId });
+      }
+      if (comment.error) {
+        Alert.alert(
+          'Uploaded; the comment did not post',
+          publishAt
+            ? `${comment.error}\n\nIt is tried again when the video goes public, and you get a reminder at that minute.`
+            : `${comment.error}\n\nThe video is up. Post it by hand from the checklist.`
+        );
+      }
+
       if (project.assets.thumbnail) {
         try {
           await setThumbnail(tokens.accessToken, uploadedId, project.assets.thumbnail);
@@ -679,13 +707,6 @@ export default function PublishScreen() {
             `${finished.errors.join('\n\n')}\n\nThe video is up. Retry from the card on this screen.`
           );
         }
-      }
-      const comment = await postPinnedComment(tokens.accessToken, latest(), uploadedId);
-      if (comment.error) {
-        Alert.alert(
-          'Uploaded; the comment did not post',
-          `${comment.error}\n\nThe video is up. Post it by hand from the checklist.`
-        );
       }
 
       const entry: any = project.bankEntryId

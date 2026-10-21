@@ -15,6 +15,7 @@ import {
   type RotationItem,
 } from './rotation';
 import { isV2 } from './topicBank';
+import { isViral, viralFirst } from './viralBatch';
 import { longClipCount } from './v2Script';
 
 /** Days of Shorts a plan covers. */
@@ -103,7 +104,9 @@ export function planQueue(
         .map((l) => l.id),
     );
     const free = pool.filter((e) => !soon.has(e.related_longform));
-    const { pick } = pickForDay(free.length ? free : pool, day, placed);
+    // A9: the viral batch goes out first, in order, whatever else is waiting.
+    const viral = pool.find(isViral);
+    const { pick } = viral ? { pick: viral } : pickForDay(free.length ? free : pool, day, placed);
     if (!pick) break;
     days.push({ day, weekday, at: at.toISOString(), entryId: pick.id });
     placed.push({ id: pick.id, format: pick.format, pillar: pick.pillar, day });
@@ -213,8 +216,9 @@ export function autoReorder(plan: WeekPlan, entries: any[], history: RotationIte
   const picked = plan.days.map((d) => byId.get(d.entryId)).filter((e) => Boolean(e && isV2(e) && e.kind === 'short'));
   if (picked.length !== plan.days.length) return null;
   const queue = picked
-    .map((e) => ({ id: e.id, format: e.format, pillar: e.pillar, order: e.order, feeds: e.related_longform }))
+    .map((e) => ({ ...e, id: e.id, format: e.format, pillar: e.pillar, order: e.order, feeds: e.related_longform }))
     .sort((a, b) => a.order - b.order);
+  const viral = viralFirst(queue).filter(isViral);
   const days = plan.days.map((d) => d.day);
   const base = history.filter((h) => !picked.some((p) => p.id === h.id));
   const soon = plan.days.map(
@@ -229,9 +233,16 @@ export function autoReorder(plan: WeekPlan, entries: any[], history: RotationIte
           .map((l) => l.entryId),
       ),
   );
-  const order =
-    reorderQueue(queue, days, base, (q, i) => !soon[i].has(q.feeds)) ?? reorderQueue(queue, days, base);
-  if (!order) return null;
+  // A9: the viral batch keeps the first days, in batch order; the rest is reordered around it.
+  const rest = queue.filter((q) => !isViral(q));
+  const fixed = viral.map((v, i) => ({ ...v, day: days[i] }));
+  const restDays = days.slice(viral.length);
+  const restBase = [...base, ...fixed.map((f) => ({ id: f.id, format: f.format, pillar: f.pillar, day: f.day }))];
+  const restOrder =
+    reorderQueue(rest, restDays, restBase, (q, i) => !soon[i + viral.length].has(q.feeds)) ??
+    reorderQueue(rest, restDays, restBase);
+  if (!restOrder) return null;
+  const order = [...viral, ...restOrder];
   return { ...plan, days: plan.days.map((d, i) => ({ ...d, entryId: order[i].id })) };
 }
 

@@ -28,6 +28,7 @@ import { exportBank, pickBankFile, previewImport, type ImportPreview } from '@/s
 import { TOPIC_BANK_V2, TOPIC_BANK_V2_FILE } from '@/assets/topicBankV2';
 import { runAutoImport } from '@/services/autoImportBank';
 import { useMounted } from '@/util/useMounted';
+import { viralBadge, viralOf } from '@/core/viralBatch';
 import type { RootStackParamList } from '@/navigation/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -270,7 +271,9 @@ export default function ImportedTopicBank() {
   };
 
   // v2 topics before legacy ones, then in bank order.
-  const sortKey = (a: any, b: any) => (isV2(a) ? 0 : 1) - (isV2(b) ? 0 : 1) || a.order - b.order;
+  const viralRank = (e: any) => viralOf(e)?.queue ?? viralOf(e)?.position ?? Number.MAX_SAFE_INTEGER;
+  const sortKey = (a: any, b: any) =>
+    (isV2(a) ? 0 : 1) - (isV2(b) ? 0 : 1) || viralRank(a) - viralRank(b) || a.order - b.order;
 
   const fixOrder = () => {
     if (!weekPlan) return;
@@ -459,6 +462,7 @@ export default function ImportedTopicBank() {
                         {long ? ' · LONG-FORM' : ''}
                       </Small>
                       <Row style={{ flexWrap: 'wrap', gap: 4 }}>
+                        {v2 && viralOf(v2) ? <Badge label={viralBadge(viralOf(v2)!)} tone="warn" /> : null}
                         {v2 && v2.kind === 'short' ? <Tag label={v2.format} color={FORMAT_COLORS[v2.format]} /> : null}
                         {v2 ? <Tag label={PILLAR_LABELS[v2.pillar]} color={PILLAR_COLORS[v2.pillar]} /> : null}
                         <Small>
@@ -628,6 +632,7 @@ export default function ImportedTopicBank() {
                 >
                   <Row style={{ flexWrap: 'wrap' }}>
                     <Badge label={shortId(e.id)} tone="info" />
+                    {viralOf(e) ? <Badge label={viralBadge(viralOf(e)!)} tone="warn" /> : null}
                     {isV2(e) ? (
                       <>
                         {e.kind !== 'short' ? (

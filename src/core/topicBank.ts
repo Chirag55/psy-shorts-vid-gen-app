@@ -9,6 +9,7 @@ import { WEEKDAYS } from './schedule';
 import { convertPsychBank, isPsychBank } from './psychBank';
 import { isV2Bank, parseBankV2, readScenes, V2_BANK_ID, type BankEntry } from './bankV2';
 import { lfReportLine } from './psychBank';
+import { cueLine } from './viralBatch';
 
 export const FRAMINGS = ['identity', 'self_callout', 'test', 'relationship', 'borrowed'];
 const LONG_FRAMINGS = ['identity', 'self_callout', 'relationship', 'borrowed'];
@@ -638,6 +639,13 @@ function exportV2Items(items: any[]): string[] {
     ...scalar(e, 'hook_text_pov'),
     ...raw(e, 'test_profile'),
     ...raw(e, 'test_hook'),
+    ...raw(e, 'viral_batch'),
+    ...scalar(e, 'upload_order'),
+    ...scalar(e, 'voice_settings'),
+    ...yamlList('subtitles', e.subtitles?.map(cueLine)),
+    ...scalar(e, 'bottom_overlay'),
+    ...scalar(e, 'thumb_text'),
+    ...scalar(e, 'thumb_visual'),
   ];
   for (const e of items) {
     if (e.kind !== 'short') {
