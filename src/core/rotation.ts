@@ -91,7 +91,7 @@ function viralRank(e: any): number {
   return v ? (v.queue ?? v.position) : Number.MAX_SAFE_INTEGER;
 }
 
-/** Unused v2 Shorts ready to plan, best first (a viral batch first, in its order). */
+/** Unused v2 Shorts ready to plan, best first: a viral batch in its order, then the bank's virality rank. */
 export function plannableShorts(entries: any[]): any[] {
   return entries
     .filter(
@@ -99,13 +99,15 @@ export function plannableShorts(entries: any[]): any[] {
         isV2(e) &&
         e.kind === 'short' &&
         e.status === 'unused' &&
-        e.priority !== 'C' &&
+        // A Gemini virality rank puts even a priority C Short in the upload order.
+        (e.priority !== 'C' || e.virality_rank !== undefined) &&
         e.priority !== 'published' &&
         !blockReasons(e).length,
     )
     .sort(
       (a, b) =>
         viralRank(a) - viralRank(b) ||
+        (a.virality_rank ?? Number.MAX_SAFE_INTEGER) - (b.virality_rank ?? Number.MAX_SAFE_INTEGER) ||
         (a.priority ? PRIORITY_RANK[a.priority] : PRIORITY_RANK.B) -
           (b.priority ? PRIORITY_RANK[b.priority] : PRIORITY_RANK.B) ||
         (a.queue ?? Number.MAX_SAFE_INTEGER) - (b.queue ?? Number.MAX_SAFE_INTEGER) ||

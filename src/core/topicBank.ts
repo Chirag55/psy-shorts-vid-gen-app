@@ -639,6 +639,8 @@ function exportV2Items(items: any[]): string[] {
     ...scalar(e, 'hook_text_pov'),
     ...raw(e, 'test_profile'),
     ...raw(e, 'test_hook'),
+    ...raw(e, 'virality_rank'),
+    ...scalar(e, 'gemini_score'),
     ...raw(e, 'viral_batch'),
     ...scalar(e, 'upload_order'),
     ...scalar(e, 'voice_settings'),

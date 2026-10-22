@@ -45,6 +45,7 @@ const SHORT_FIELDS = new Set([
   'bank_id', 'priority', 'queue', 'title_final', 'description_full', 'evidence', 'ig_keywords', 'ig_line1', 'ig_hashtags', 'ig_first_comment',
   'clip_ids', 'still_ids', 'mood', 'audit', 'hook_text_pov', 'test_profile', 'test_hook', 'shots', 'est_seconds', 'compliance', 'character_looks',
   'viral_batch', 'upload_order', 'voice_settings', 'subtitles', 'bottom_overlay', 'thumb_text', 'thumb_visual',
+  'virality_rank', 'gemini_score',
 ]);
 
 /** Fields a reader may find on either kind (accepted without a warning in the other kind's block). */
@@ -274,6 +275,12 @@ function metaFields(f: Record<string, any>, line: number, id: string, issues: Ba
   choice('test_profile', ['calm', 'punchy'], '"test_profile" must be calm or punchy');
   choice('test_hook', ['label', 'pov'], '"test_hook" must be label or pov');
   choice('mood', ['warm', 'dark'], '"mood" must be warm or dark');
+  assign('gemini_score', text(f.gemini_score));
+  if (f.virality_rank !== undefined) {
+    const r = Number(f.virality_rank);
+    if (Number.isInteger(r) && r >= 1) meta.virality_rank = r;
+    else bad(`"virality_rank" must be a whole number from 1 (it is "${String(f.virality_rank)}")`);
+  }
   if (f.queue !== undefined) {
     const q = Number(f.queue);
     if (Number.isInteger(q) && q >= 1) meta.queue = q;

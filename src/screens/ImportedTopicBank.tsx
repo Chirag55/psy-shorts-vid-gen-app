@@ -271,7 +271,10 @@ export default function ImportedTopicBank() {
   };
 
   // v2 topics before legacy ones, then in bank order.
-  const viralRank = (e: any) => viralOf(e)?.queue ?? viralOf(e)?.position ?? Number.MAX_SAFE_INTEGER;
+  const viralRank = (e: any) =>
+    viralOf(e)?.queue ??
+    viralOf(e)?.position ??
+    (e.virality_rank !== undefined ? 1000 + e.virality_rank : Number.MAX_SAFE_INTEGER);
   const sortKey = (a: any, b: any) =>
     (isV2(a) ? 0 : 1) - (isV2(b) ? 0 : 1) || viralRank(a) - viralRank(b) || a.order - b.order;
 
@@ -633,6 +636,7 @@ export default function ImportedTopicBank() {
                   <Row style={{ flexWrap: 'wrap' }}>
                     <Badge label={shortId(e.id)} tone="info" />
                     {viralOf(e) ? <Badge label={viralBadge(viralOf(e)!)} tone="warn" /> : null}
+                    {!viralOf(e) && e.virality_rank ? <Badge label={`RANK ${e.virality_rank}`} tone="neutral" /> : null}
                     {isV2(e) ? (
                       <>
                         {e.kind !== 'short' ? (
