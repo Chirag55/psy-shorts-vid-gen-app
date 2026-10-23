@@ -133,7 +133,7 @@ interface HookSource {
 
 /** The words on the opening card: the bank's hook text, else a short card, else the title cut to fit. */
 export function hookCardText(p: HookSource, maxWords: number = DEFAULT_CHANNEL_CONFIG.hook.maxCardWords): string {
-  if (p.bankV2?.testHook === 'pov' && p.bankV2.hookTextPov) return p.bankV2.hookTextPov;
+  // A10: frame 1 always carries the full hook_text banner (the POV hook test is retired).
   if (p.bankV2?.hookText) return p.bankV2.hookText;
   const title = (p.title ?? '').replace(/#\S+/g, '').replace(/^the psychology of\s+/i, '').replace(/\s+/g, ' ').trim();
   const number = /^(\d+)\b/.exec(title)?.[1];
@@ -148,7 +148,7 @@ export function hookCardText(p: HookSource, maxWords: number = DEFAULT_CHANNEL_C
 }
 
 export function hookStyleOf(p: HookSource): 'pov' | 'label' {
-  return p.bankV2?.testHook === 'pov' && p.bankV2.hookTextPov ? 'pov' : 'label';
+  return !p.bankV2?.hookText && p.bankV2?.testHook === 'pov' && p.bankV2.hookTextPov ? 'pov' : 'label';
 }
 
 export interface CardWindow {
@@ -247,6 +247,15 @@ export function narrationTrim(timings: WordTiming[], leadSilence: number, preRol
   if (!(leadSilence > 0)) return 0;
   const t = timings.length ? Math.min(leadSilence, timings[0].start) : leadSilence;
   return Math.max(0, t - preRollMs / 1000);
+}
+
+/**
+ * A10: seconds to cut from the head of the voice so the first consonant lands
+ * at 0:00.00 (ElevenLabs files open with about 0.15 to 0.25 s of air).
+ */
+export function firstWordTrim(timings: WordTiming[], leadSilence: number, maxSeconds = 0.6): number {
+  const t = timings.length && timings[0].start > 0 ? timings[0].start : leadSilence > 0 ? leadSilence : 0;
+  return Math.min(Math.max(0, t), maxSeconds);
 }
 
 export function trimWords(timings: WordTiming[], by: number): WordTiming[] {

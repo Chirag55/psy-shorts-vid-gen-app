@@ -18,7 +18,7 @@ import {
   hookCardText,
   hookStyleOf,
   loopCutDuration,
-  narrationTrim,
+  firstWordTrim,
   shiftWords,
   trimWords,
 } from '@/core/hooks';
@@ -38,6 +38,7 @@ import {
   textWatermarkFilters,
   watermarkPatch,
   whooshFilters,
+  hookHitFilters,
 } from '@/core/renderRules';
 import { unvoicedTracks } from '@/core/voiceGaps';
 import { frameFilter, framePlan } from '@/core/framing';
@@ -305,7 +306,9 @@ export async function assembleShort(project: Project, opts: AssembleOptions): Pr
     detectLeadingSilence(audio, hookCfg.silenceThresholdDb),
   );
   const shortWords: any[] = project.assets.alignment.short ?? [];
-  const trim = Math.min(narrationTrim(shortWords, lead, hookCfg.maxPreRollMs), Math.max(0, audioDuration - 1));
+  // A10: the first consonant lands at 0:00.00.
+  const trim = Math.min(firstWordTrim(shortWords, lead), Math.max(0, audioDuration - 1));
+  opts.onLog?.([`Voice head trimmed by ${trim.toFixed(2)} s so the first word starts at 0:00.00 (A10)`]);
   const trimmed: any[] = trimWords(shortWords, trim);
   const anyHeld = script.beats.some((b: any) => b.shots?.some((s: any) => s.held));
   const lineEnds = anyHeld
@@ -498,6 +501,10 @@ export async function assembleShort(project: Project, opts: AssembleOptions): Pr
     }
   }
 
+  filters.push(...hookHitFilters(audioOut.replace(/^\[|\]$/g, ''), 'ahit'));
+  audioOut = '[ahit]';
+  opts.onLog?.(['Low-bass hit layered at 0:00.00 (A10)']);
+
   if (opts.cutWhoosh) {
     const sum = lens.reduce((a, b) => a + b, 0) || 1;
     let acc = 0;
@@ -556,7 +563,7 @@ export async function assembleShort(project: Project, opts: AssembleOptions): Pr
     total,
     stimHold ? { start: holdAt, end: holdAt + stimHold } : undefined,
     hookCfg,
-  ).filter((c) => !viral && (opts.includeCaptions || c.name === 'hook'));
+  ).filter((c) => (viral ? c.name === 'hook' : opts.includeCaptions || c.name === 'hook'));
   if (viral) {
     for (const o of viralOverlays(viral, total)) {
       const card = await traced(`Drawing the "${o.name}" overlay`, () =>
@@ -703,7 +710,7 @@ export async function assembleShort(project: Project, opts: AssembleOptions): Pr
       draft: opts.draft,
       width: W,
       height: H,
-      hookText: viral?.subtitles[0]?.text ?? hookText,
+      hookText,
       ...(lufs === undefined ? {} : { lufs }),
       ...(gaps ? { longGaps: gaps.length } : {}),
       ...(paced.removed > 0 ? { pausesCut: Math.round(paced.removed * 100) / 100 } : {}),

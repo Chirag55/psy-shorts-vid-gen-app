@@ -167,7 +167,7 @@ export default function AssemblyScreen() {
         <H2>Assembly</H2>
         <Small>
           {project.mode === 'short'
-            ? 'Hero clips are speed-matched to the voiceover, then word-level captions are burned in.'
+            ? 'Hero clips are speed-matched to the voiceover, then word-level captions are burned in. Every Short opens on its hook_text banner, the first word at 0:00 and a low-bass hit (A10).'
             : 'Every chapter is synced and captioned against its own audio before anything is concatenated, so drift cannot compound.'}
         </Small>
       </Card>
@@ -179,8 +179,9 @@ export default function AssemblyScreen() {
             <Badge label={viralBadge(viral)} tone="warn" />
           </Row>
           <Small>
-            The shots run in storyboard order at an even pace, the bank's subtitles are burned into the centre third in
-            place of the captions and text cards, and the audio cuts on the last syllable so it loops into 0:00.
+            The shots run in storyboard order at an even pace, the hook banner sits on frame 1, the bank's subtitles are
+            burned into the centre third in place of the captions and text cards, and the audio cuts on the last
+            syllable so it loops into 0:00.
           </Small>
           {viral.subtitles.map((c, i) => (
             <Small key={i} style={{ color: colors.text }}>

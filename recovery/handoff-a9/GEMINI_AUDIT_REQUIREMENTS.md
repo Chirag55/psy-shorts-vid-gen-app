@@ -93,3 +93,11 @@ Decisions you made on 12 Oct where the audits pull in different directions: (rev
 5. Frame Cognitive Bias and Persuasion topics around how a manipulator, toxic boss or partner uses them.
 6. Title and description end with #shorts #psychology #DarkPsychology.
 Checker: these curated scripts are waived on S1, S2, S3, S5, S6, S13 and V1 (shot count). Blocked props (phone, laptop, desk, coffee, table) are replaced with neutral ones in shot lines.
+
+## A10. First-two-seconds hook fixes (Gemini, 23 Oct 2026) — supersedes the 13 Oct "brighter visuals" rule for Shorts
+Evidence: D43 went out with 31.8% stayed / 68.2% swiped (about 60 impressions). Gemini blames the opening frame, not the script.
+1. **Beat 1 is always an extreme close-up** (face or eyes fill about 70% of the vertical frame, or a high-tension object). No wide or medium opener, no two people standing in a room. In the bank, beat 1 is now `CU` for every pending Short; the prompt generator adds "extreme close-up, face fills ~70% of the frame".
+2. **Lighting anchor for all Shorts:** dramatic chiaroscuro lighting, dark moody background, warm rim light, deep shadows, high-contrast thriller aesthetic. Every pending Short has `mood: dark`; the prompt generator appends this line and overrides daylight words in the setting.
+3. **No numbered-list title openers** ("3 Signs...", "5 Tricks..."). D16, D23, D31, D51, D125 and D132 now use their `hook_alt` as the title. D52 and D53 still start with a number word; Gemini gave no replacement.
+4. **App must (see VIRAL_BATCH_A9.md):** trim the first 0.15 to 0.25 s of the ElevenLabs file so the first consonant hits at 0:00.00; layer a loud low-bass thud or shutter hit at 0:00.00; burn the whole 3 to 4 word hook banner (`hook_text`) onto frame 1 in large yellow/white text with a thick black border above the eyes, static, not word by word.
+5. Do not re-title the live video; test a "2-second hook surgery" by replacing only the first 2 seconds of the D43 file with the new beat 1 (clip MF031-C1), a 0:00 bass hit and a static FAKE PRAISE TRAP banner.

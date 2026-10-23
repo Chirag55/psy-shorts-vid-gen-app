@@ -12,6 +12,11 @@ export const FRAME_9X16 =
   'Full-frame vertical 9:16 artwork (1080x1920): fully detailed, sharp scenery fills the entire frame from the top edge to the bottom edge and from the left edge to the right edge, with rich detail in every part of the image, including the very top and the very bottom. No blur, no empty space, no flat or blank areas, no bands, no borders, no letterboxing, no black bars.';
 export const FRAME_16X9 =
   'Full-frame horizontal 16:9 artwork (1920x1080): fully detailed, sharp scenery fills the entire frame from the top edge to the bottom edge and from the left edge to the right edge, with rich detail in every part of the image. No blur, no empty space, no flat or blank areas, no bands, no borders, no letterboxing, no black bars.';
+/** A10 (Gemini, 23 Oct 2026): every Short's lighting anchor; it overrides daylight named in the scene. */
+export const SHORT_LIGHT =
+  'Lighting: dramatic chiaroscuro lighting, dark moody background, warm rim light, deep shadows, high-contrast thriller aesthetic, intense psychological thriller mood. This lighting overrides any daylight named in the scene description; the figures stay clearly lit and readable.';
+/** A10: a close-up first beat is an extreme close-up that fills the frame. */
+export const FIRST_BEAT_CU = 'extreme close-up, the face or eyes fill about 70% of the vertical frame';
 export const FROZEN = 'The moment is caught mid-action, as if paused at its most dramatic instant.';
 export const CLIP_RULES =
   'One continuous shot of up to 8 seconds with clear, natural movement in the subject (not a frozen picture), no cuts. At most two characters; keep faces, hair and clothes exactly as described for the whole clip.';
@@ -81,17 +86,19 @@ export function settingOf(shot: { setting: string }, firstSetting?: string): str
 
 export function shortShotPrompt(
   shot: ShortShot,
-  opts: { firstSetting?: string; looks?: string[]; withId?: boolean },
+  opts: { firstSetting?: string; looks?: string[]; withId?: boolean; first?: boolean },
 ): string {
-  const setting = settingOf(shot, opts.firstSetting);
+  // A10: daylight words give way to the thriller lighting; beat 1 opens on an extreme close-up.
+  const setting = settingOf(shot, opts.firstSetting).replace(/\b(sunlit|sunny|bright|sunshine)\b/gi, 'dim');
   const looks = lookLines(shot.action, opts.looks);
-  const head = `${SHOT_STYLE} ${looks ? `${looks} ` : ''}${cap(sizeWords(shot.size))}, ${setting}: ${shot.action}.`;
+  const size = opts.first && shot.size.toLowerCase() === 'cu' ? FIRST_BEAT_CU : sizeWords(shot.size);
+  const head = `${SHOT_STYLE} ${looks ? `${looks} ` : ''}${cap(size)}, ${setting}: ${shot.action}.`;
   let p: string;
   if (shot.kind !== 'still') {
-    p = `${head} Camera: ${MOVES[shot.move] ?? shot.move}. ${CLIP_RULES} ${SHOT_MOOD} ${FRAME_9X16} ${SHOT_NEG}`;
+    p = `${head} Camera: ${MOVES[shot.move] ?? shot.move}. ${CLIP_RULES} ${SHOT_MOOD} ${SHORT_LIGHT} ${FRAME_9X16} ${SHOT_NEG}`;
   } else {
     const frozen = /S1$/.test(shot.id) ? FROZEN : '';
-    p = `${head} ${frozen} ${SHOT_MOOD} ${FRAME_9X16} ${SHOT_NEG}`.replace(/ {2}/g, ' ');
+    p = `${head} ${frozen} ${SHOT_MOOD} ${SHORT_LIGHT} ${FRAME_9X16} ${SHOT_NEG}`.replace(/ {2}/g, ' ');
   }
   return opts.withId ? `${shot.id} | ${p}` : p;
 }

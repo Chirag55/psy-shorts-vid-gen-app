@@ -26,3 +26,15 @@ Lock the channel to the Dark Psychology / Manipulation Defense cluster for these
 
 ## Scope note
 `viral_meta.py` (run after the build) applies the hashtag lock to all pending Shorts and adds the fields above to the five.
+
+## Virality ranking in the app (added 22 Oct 2026)
+- Every pending Short has `virality_rank` (1 = upload first), `gemini_score` and `queue` (same number as the rank). `START_HERE_RANKING.md` lists all 90.
+- The Topic Bank screen must default to sort by `virality_rank`, show the rank and the Gemini basis (`gemini_score`) on each card, and highlight the first not-yet-started Short as "START HERE". Viral Batch A9 shows 100 and ranks 1-5.
+- Re-run `rank.py` after any bank change (it rewrites the ranks; the order follows Gemini only).
+
+## Hook-frame rules the app must apply to every Short (Audit A10, 23 Oct 2026)
+- Trim the first 0.15 to 0.25 s of every ElevenLabs file so the first consonant lands at 0:00.00.
+- Add a loud low-bass thud or camera-shutter hit at 0:00.00.
+- Frame 1 carries the full `hook_text` banner (3 to 4 words, large yellow or white, thick black border, above the character's eyes), static from 0:00.00. Never animate it word by word.
+- Beat 1 is an extreme close-up on every Short (already set in the bank); mood is `dark` (chiaroscuro thriller lighting).
+- Test on D43 first: replace only the first 2 seconds of the live video with the new MF031-C1 clip, the bass hit and the FAKE PRAISE TRAP banner. Leave the live title alone.

@@ -43,6 +43,9 @@ FRAME16 = ("Full-frame horizontal 16:9 artwork (1920x1080): fully detailed, shar
 FROZEN = "The moment is caught mid-action, as if paused at its most dramatic instant."
 CLIP = ("One continuous shot of up to 8 seconds with clear, natural movement in the subject (not a frozen picture), no cuts. At most two characters; keep faces, hair and clothes exactly as described for the whole clip.")
 
+LIGHT = ("Lighting: dramatic chiaroscuro lighting, dark moody background, warm rim light, deep shadows, high-contrast thriller aesthetic, intense psychological thriller mood. "
+         "This lighting overrides any daylight named in the scene description; the figures stay clearly lit and readable.")
+
 def ident(text, looks=None):
     src = {l.split(',')[0]: l for l in looks} if looks else CAST
     return ' '.join(src[c] for c in src if re.search(r'\b%s\b' % c, text))
@@ -106,11 +109,13 @@ def main():
             bid, kind = bid_kind.split(' ', 1)
             who = ident(action, looks)
             shot = SIZE.get(size.lower(), size)
+            if b is beats[0] and size.lower() == 'cu': shot = 'extreme close-up, the face or eyes fill about 70% of the vertical frame'
+            setting = re.sub(r'\b(sunlit|sunny|bright|sunshine)\b', 'dim', setting)
             if kind.startswith('still'):
                 frozen = FROZEN if bid.endswith('S1') else ''
-                stills.append(f"{bid} | {STYLE} {who + ' ' if who else ''}{shot.capitalize()}, {setting}: {action}. {frozen} {MOOD} {FRAME} {NEG}".replace('  ', ' '))
+                stills.append(f"{bid} | {STYLE} {who + ' ' if who else ''}{shot.capitalize()}, {setting}: {action}. {frozen} {MOOD} {LIGHT} {FRAME} {NEG}".replace('  ', ' '))
             else:
-                clips.append(f"{bid} | {STYLE} {who + ' ' if who else ''}{shot.capitalize()}, {setting}: {action}. Camera: {MOVE.get(move, move)}. {CLIP} {MOOD} {FRAME} {NEG}")
+                clips.append(f"{bid} | {STYLE} {who + ' ' if who else ''}{shot.capitalize()}, {setting}: {action}. Camera: {MOVE.get(move, move)}. {CLIP} {MOOD} {LIGHT} {FRAME} {NEG}")
             manifest.append(dict(topic=sid, order=beats.index(b) + 1, id=bid, type='clip' if kind.startswith('clip') else 'still', shot=size, move=move))
     sthumbs = []
     for sid, beats, looks, nar in shorts:

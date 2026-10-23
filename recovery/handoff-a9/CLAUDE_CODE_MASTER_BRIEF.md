@@ -1,4 +1,4 @@
-> **READ FIRST: `VIRAL_BATCH_A9.md`. Five Shorts (D43, D19, D23, D61, D16) are the first five uploads and the app must queue, badge and render them as described there (queue 1-5, subtitles, bottom overlay, voice settings, thumbnails).**
+> **READ FIRST: `VIRAL_BATCH_A9.md` (including the 23 Oct hook-frame rules A10). Five Shorts (D43, D19, D23, D61, D16) are the first five uploads and the app must queue, badge and render them as described there (queue 1-5, subtitles, bottom overlay, voice settings, thumbnails). The Topic Bank must also sort by `virality_rank` and show a START HERE badge (see the end of that file and `START_HERE_RANKING.md`).**
 
 # CLAUDE_CODE_MASTER_BRIEF.md
 **App:** The Mind Files Studio (Android, single user, no server). The brief supplied with these CRs describes v2.9.0 (build 24); earlier CRs assumed v4.7.0. **Check every item against your current build before changing code**; the app's own numbering is authoritative.

@@ -203,7 +203,7 @@ function slowShots(beats: VisualBeat[], segments: Segment[], opts: { looks?: str
       isCutaway: insert,
       clipPrompt: shortShotPrompt(
         { id: b.id ?? `S${i + 1}`, kind: clip ? 'clip' : 'still', size: b.size, setting: b.setting, action: b.subject, move: b.camera },
-        { firstSetting, looks },
+        { firstSetting, looks, first: i === 0 },
       ),
       beat: i,
       interrupt: clip,

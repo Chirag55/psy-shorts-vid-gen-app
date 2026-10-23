@@ -275,6 +275,10 @@ export default function ImportedTopicBank() {
     viralOf(e)?.queue ??
     viralOf(e)?.position ??
     (e.virality_rank !== undefined ? 1000 + e.virality_rank : Number.MAX_SAFE_INTEGER);
+  // The first ranked Short nobody has started yet (VIRAL_BATCH_A9.md: "START HERE").
+  const startHere = bank
+    .filter((e) => isV2(e) && e.kind === 'short' && e.status === 'unused' && !blockReasons(e).length)
+    .sort((a, b) => viralRank(a) - viralRank(b) || a.order - b.order)[0]?.id;
   const sortKey = (a: any, b: any) =>
     (isV2(a) ? 0 : 1) - (isV2(b) ? 0 : 1) || viralRank(a) - viralRank(b) || a.order - b.order;
 
@@ -636,6 +640,7 @@ export default function ImportedTopicBank() {
                   <Row style={{ flexWrap: 'wrap' }}>
                     <Badge label={shortId(e.id)} tone="info" />
                     {viralOf(e) ? <Badge label={viralBadge(viralOf(e)!)} tone="warn" /> : null}
+                    {e.id === startHere ? <Badge label="START HERE" tone="ok" /> : null}
                     {!viralOf(e) && e.virality_rank ? <Badge label={`RANK ${e.virality_rank}`} tone="neutral" /> : null}
                     {isV2(e) ? (
                       <>
@@ -672,6 +677,7 @@ export default function ImportedTopicBank() {
                     )}
                   </Row>
                   <Body style={{ fontSize: 14, lineHeight: 20 }}>{e.title}</Body>
+                  {e.gemini_score ? <Small>Gemini: {e.gemini_score}</Small> : null}
                 </Pressable>
               );
             })}

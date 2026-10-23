@@ -304,6 +304,15 @@ export function whooshFilters(input: string, cutTimes: number[], duration: numbe
   ];
 }
 
+/** A10: a loud low-bass thud at 0:00.00 under the first word, limited so it never clips. */
+export function hookHitFilters(input: string, out: string): string[] {
+  const thud = '0.55*sin(2*PI*48*t)*exp(-7*t)+0.3*sin(2*PI*96*t)*exp(-12*t)+0.15*sin(2*PI*150*t)*exp(-22*t)';
+  return [
+    `aevalsrc='${thud}':s=44100:d=0.6,lowpass=f=320,volume=-1dB,aformat=sample_fmts=fltp:channel_layouts=stereo[${out}_hit]`,
+    `[${input}][${out}_hit]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.97:level=disabled[${out}]`,
+  ];
+}
+
 /** A quiet synth bed under the voice, ducked whenever the voice speaks. */
 export function musicBedFilters(
   voice: string,
