@@ -1,6 +1,7 @@
 import { File } from 'expo-file-system';
 import { buildLongFormAss, buildShortFormAss } from '@/core/ass';
-import { buildCaptionFrames } from '@/core/captions';
+import { buildCaptionFrames, type CaptionFrame } from '@/core/captions';
+import { retimeShots, retimeSubtitles, subtitleFrames } from '@/core/bankTiming';
 import { CALM_CAPTION_WORDS, hootHiddenSpans } from '@/core/styleProfiles';
 import { connectiveStillDuration, kenBurnsFilter, moveForChapter, setptsFactor, stillInputArgs } from '@/core/kenburns';
 import { emotionFor } from '@/core/mascot';
@@ -70,7 +71,8 @@ import {
 } from './ffmpeg';
 import { bucketDir, bucketFile, toFsPath, writeText } from './workspace';
 import { mark, traced } from './breadcrumbs';
-import { BOTTOM_OVERLAY_SECONDS, viralOverlays, type ViralInfo } from '@/core/viralBatch';
+import { BOTTOM_OVERLAY_SECONDS, viralOverlays, type SubtitleCue, type ViralInfo } from '@/core/viralBatch';
+import type { ShotTime } from '@/core/bankTiming';
 
 const SHORT_W = 1080;
 const SHORT_H = 1920;
@@ -93,6 +95,10 @@ const KB_MOVES = ['zoom_in', 'pan_right', 'zoom_out', 'pan_left'] as const;
 /** Where thumbnail candidate frames are sampled, as fractions of the runtime. */
 const THUMB_MARKS = [0.15, 0.3, 0.45, 0.6, 0.8];
 const AUDIO_FORMAT = 'aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo';
+/** A11: subtitle keyword colour. */
+const SUBTITLE_KEYWORD = '#FFD700';
+/** A11: the hook_text banner stays on the top of the screen for the first 2.5 s. */
+const HOOK_BANNER_SECONDS = 2.5;
 
 export interface RenderInfo {
   draft: boolean;
@@ -206,24 +212,29 @@ async function prepareCaptions(
   H: number,
   duration: number,
   opts: AssembleOptions,
-  cap: { words?: WordTiming[]; maxHoldSeconds?: number; phrases?: boolean } = {},
+  cap: { words?: WordTiming[]; maxHoldSeconds?: number; phrases?: boolean; frames?: CaptionFrame[] } = {},
 ): Promise<{ inputs: string[]; filter: (base: string, capLabel: string, out: string) => string } | null> {
   const words = cap.words ?? project.assets.alignment[key] ?? [];
-  if (!words.length) return null;
+  if (!words.length && !cap.frames?.length) return null;
 
-  const frames = buildCaptionFrames(words, {
-    maxHoldSeconds: cap.maxHoldSeconds,
-    singleWord: mode === 'short' && !cap.phrases,
-    phraseSize: cap.phrases ? CALM_CAPTION_WORDS : 4,
-    highlightActiveWord: false,
-  });
+  const frames =
+    cap.frames ??
+    buildCaptionFrames(words, {
+      maxHoldSeconds: cap.maxHoldSeconds,
+      singleWord: mode === 'short' && !cap.phrases,
+      phraseSize: cap.phrases ? CALM_CAPTION_WORDS : 4,
+      highlightActiveWord: false,
+    });
   if (!frames.length) return null;
 
   // Bundled typeface must be resolved before the first frame is drawn.
   await preloadCaptionFont();
 
-  const styleMode = cap.phrases ? 'shortPhrase' : mode;
-  const style = captionStyleFor(styleMode, W, H);
+  const styleMode = cap.phrases || cap.frames ? 'shortPhrase' : mode;
+  // A11: bank subtitle blocks carry a heavy drop shadow and a gold keyword.
+  const style = cap.frames
+    ? { ...captionStyleFor(styleMode, W, H), highlight: SUBTITLE_KEYWORD, shadowOffset: Math.max(2, Math.round(7 * (W / 1080))) }
+    : captionStyleFor(styleMode, W, H);
   const doneCaptions = mark(`Drawing ${frames.length} caption frames (${mode}, ${style.width}x${style.height})`);
   let rendered;
   try {
@@ -246,8 +257,10 @@ async function prepareCaptions(
   // still be finished there.
   const doneAss = mark(`Writing the .ass sidecar (${mode}, ${words.length} words)`);
   try {
-    const ass = mode !== 'short' ? buildLongFormAss(words) : buildShortFormAss(words);
-    writeText(bucketFile('subs', project.slug, `ch_${key}.ass`), ass);
+    if (words.length) {
+      const ass = mode !== 'short' ? buildLongFormAss(words) : buildShortFormAss(words);
+      writeText(bucketFile('subs', project.slug, `ch_${key}.ass`), ass);
+    }
   } finally {
     doneAss();
   }
@@ -332,8 +345,8 @@ export async function assembleShort(project: Project, opts: AssembleOptions): Pr
       'Line pauses (CR-91): the voice timing does not match the lines word for word, so the pauses were left as voiced',
     ]);
   }
-  // A9: a viral Short cuts hard on the final syllable so the audio loops into 0:00.
-  const voiceLen = loopCutDuration(pacedWords, spoken, viral ? 0 : undefined);
+  // A11: the audio cuts dead 0.2 s after the last syllable, no outro fade.
+  const voiceLen = loopCutDuration(pacedWords, spoken);
   const stimHold =
     script.structure === 'test' && script.stimulus && script.stimulus.holdSeconds > 0 && pacedWords.length
       ? script.stimulus.holdSeconds
@@ -351,7 +364,25 @@ export async function assembleShort(project: Project, opts: AssembleOptions): Pr
           : project.assets.stills[assetKeyFor(f.flatIndex, f.shot)],
     }))
     .filter((f) => Boolean(f.uri)) as any[];
-  const ordered = clipFirst(joinHeldShots(shots)) as any[];
+  let ordered = clipFirst(joinHeldShots(shots)) as any[];
+  const bankSubs: SubtitleCue[] = script.bankV2?.subtitles ?? [];
+  const shotTimes: ShotTime[] = script.bankV2?.shotTimes ?? [];
+  if (shotTimes.length) {
+    // The bank's cuts, moved onto the words they were planned on (shot order kept).
+    const index = new Map(shotTimes.map((t, i) => [t.id, i]));
+    const ids = ordered.map((f) => f.shot.beatId);
+    if (ids.every((id) => id && index.has(id)) && new Set(ids).size === ids.length) {
+      ordered = [...ordered].sort((a, b) => index.get(a.shot.beatId)! - index.get(b.shot.beatId)!);
+      const kept = shotTimes.filter((t) => ids.includes(t.id));
+      const timed = retimeShots(kept, bankSubs, finalWords, total, { keepFirstCut: Boolean(viral) });
+      ordered = ordered.map((f, i) => ({ ...f, shot: { ...f.shot, durationSec: timed[i].end - timed[i].start } }));
+      opts.onLog?.([
+        `Shot cuts timed to the voice: ${timed.map((t) => `${t.id} ${t.start.toFixed(1)}-${t.end.toFixed(1)}`).join(', ')}`,
+      ]);
+    } else {
+      opts.onLog?.(["Shot cuts: the shots don't match the bank's shot_times, so they keep the even pacing"]);
+    }
+  }
   if (ordered.some((f) => f.shot.held)) {
     opts.onLog?.([
       `Three shots (CR-91): ${ordered.map((f) => `${f.shot.beatId ?? f.shot.source} ${f.shot.durationSec.toFixed(1)} s`).join(', ')}`,
@@ -521,7 +552,7 @@ export async function assembleShort(project: Project, opts: AssembleOptions): Pr
         audioOut.replace(/^\[|\]$/g, ''),
         total,
         'amusic',
-        project.style?.profile !== 'C' ? {} : { gainDb: -24, fadeSeconds: 1 },
+        project.style?.profile !== 'C' ? {} : { gainDb: -25, fadeSeconds: 1 },
       ),
     );
     audioOut = '[amusic]';
@@ -538,7 +569,22 @@ export async function assembleShort(project: Project, opts: AssembleOptions): Pr
       `Viral batch ${viral.batch} #${viral.position}: ${viral.subtitles.length} burned-in subtitles, bottom overlay for the last ${BOTTOM_OVERLAY_SECONDS} s`,
     ]);
   }
-  if (opts.includeCaptions && !viral) {
+  const subs = bankSubs.length && (viral || opts.includeCaptions) ? retimeSubtitles(bankSubs, finalWords, total) : [];
+  if (subs.length) {
+    // A11: the bank's 3 to 5 word blocks, centre-lower third, keyword in gold.
+    opts.onProgress?.('Drawing subtitles', 2, 5);
+    const captions = await prepareCaptions(project, 'short', 'short', W, H, total, opts, {
+      words: finalWords,
+      frames: subtitleFrames(subs),
+    });
+    if (captions) {
+      inputs.push(...captions.inputs);
+      const ci = next++;
+      filters.push(captions.filter(stage, `${ci}:v`, 'vcap'));
+      stage = 'vcap';
+    }
+    opts.onLog?.([`Subtitles: ${subs.length} bank blocks timed to the voice`]);
+  } else if (opts.includeCaptions && !viral) {
     opts.onProgress?.('Drawing captions', 2, 5);
     const captions = await prepareCaptions(project, 'short', 'short', W, H, total, opts, {
       words: finalWords,
@@ -563,9 +609,11 @@ export async function assembleShort(project: Project, opts: AssembleOptions): Pr
     total,
     stimHold ? { start: holdAt, end: holdAt + stimHold } : undefined,
     hookCfg,
-  ).filter((c) => (viral ? c.name === 'hook' : opts.includeCaptions || c.name === 'hook'));
+  )
+    .filter((c) => (viral || subs.length ? c.name === 'hook' : opts.includeCaptions || c.name === 'hook'))
+    .map((c) => (c.name === 'hook' ? { ...c, end: Math.min(c.end, HOOK_BANNER_SECONDS) } : c));
   if (viral) {
-    for (const o of viralOverlays(viral, total)) {
+    for (const o of viralOverlays(viral, total).filter((x) => x.bottom || !subs.length)) {
       const card = await traced(`Drawing the "${o.name}" overlay`, () =>
         renderTextCard({
           text: o.text,
@@ -605,7 +653,7 @@ export async function assembleShort(project: Project, opts: AssembleOptions): Pr
     const out = `vcard${ci}`;
     filters.push(`[${ci}:v]format=rgba[card${ci}]`);
     filters.push(
-      `[${stage}][card${ci}]overlay=0:${textCardY(H, card.height)}:enable='between(t,${c.start.toFixed(2)},${c.end.toFixed(2)})'[${out}]`,
+      `[${stage}][card${ci}]overlay=0:${c.name === 'hook' ? Math.max(0, Math.round(H * 0.15 - card.height / 2)) : textCardY(H, card.height)}:enable='between(t,${c.start.toFixed(2)},${c.end.toFixed(2)})'[${out}]`,
     );
     stage = out;
   }

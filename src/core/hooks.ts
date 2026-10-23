@@ -11,7 +11,8 @@ export const TITLE_MAX_CHARS = 50;
 export const TITLE_MIN_WORDS = 3;
 export const TITLE_MAX_WORDS = 7;
 /** Narration tail kept after the last word before the loop cut. */
-export const LOOP_TAIL_SECONDS = 0.12;
+/** A11: the audio is cut dead this long after the last syllable. */
+export const LOOP_TAIL_SECONDS = 0.2;
 export const HOOK_CARD_SECONDS = DEFAULT_CHANNEL_CONFIG.hook.cardSeconds;
 export const CTA_CARD_SECONDS = 2;
 export const NUMERAL_SECONDS = 0.6;

@@ -1,0 +1,19 @@
+# Audit A11: competitor study (Gemini, 23 Oct 2026)
+
+## Applied (app and production settings, no script changes)
+1. **Subtitles:** 3 to 5 word phrase blocks (never 1 to 2 word flashes), centre-lower third above the YouTube UI. Bold sans-serif (Montserrat ExtraBold or Komika Axis), heavy black drop shadow, one highlighted keyword per line (yellow #FFD700 or red #FF3B30). The `subtitles` timings on the five Viral Batch Shorts stay; the app splits long lines into blocks.
+2. **Mute-scroller banner:** `hook_text` as a top-of-screen banner for the first 2.5 s, stated independently of the voice, present on frame 1 with no fade-in.
+3. **Music:** slowed dark ambient synthwave, melancholic piano or low-fi suspense drone at -22 to -25 dB under a voiceover normalised to -3 dB. No upbeat or corporate tracks. A subtle low-frequency riser or thud at every scene change (about every 4 s on 10-beat Shorts, every shot).
+4. **Audio ending:** cut the audio dead 0.2 s after the last syllable, with no outro fade.
+5. **Weekly cadence (3 buckets):** A 40% Social Combat and Body Language (35 to 45 s, 3 micro-behaviours in one setting); B 40% "The Psychology of People Who..." (40 to 55 s, relatable overthinking and introvert habits); C 20% a 15-second Mind Test (12 to 18 s riddle for replays and comments). Use this when planning the month. Bucket C has no scripts in the bank yet.
+6. **Script rules to watch (checked by eye, not rewritten):** second person in the first 10 s (every sentence has You, Your or They); no named theory in the first 3 s; no "Fact #2" style transitions.
+
+## Not applied, and why (conflicts with decisions you already made)
+- **Question-cut ending:** this audit says forced loop endings hurt; Audit A9 (22 Oct) requires the loop-bridge ending with no spoken question. A9 stays until a retention graph says otherwise. Compare the first two A9 Shorts' replay rate before deciding.
+- **Voice at 140 to 150 words per minute with 0.3 s pauses:** the A9 Shorts are 24 s at 1.12x speed, about 185 words per minute; slowing the voice would break the 24 s plan.
+- **Stickman Flow workflow and desaturated dark-vignette look:** your Shorts use the anime cast; you decided earlier not to adopt a vignette. The dark chiaroscuro lighting from A10 stays.
+- **"If someone..." cold-open scripts and the Gamified Test hook:** these need new or rewritten scripts. Send them from Gemini and I will add them as new topics.
+- **Competitor list:** saved below for the Outlier Tracker; I cannot add channel IDs to `competitor_seed_ids.txt` without them.
+
+## Competitor dataset (20 videos)
+Psych2Go "10 Body Language Signs Your Crush Likes You" 4.0M, 58 s; Psych2Go "Signs You're Not an Introvert, But Depressed" 1.53M, 60 s; Mastering Mind Control "6 Simple Psychology Tricks!" 3.21M, 56 s; Mastering Mind Control "Hope It Helps!" 1.19M, 36 s; Manipulation Unleashed "6 dark manipulation tricks" 1.74M, 58 s; Manipulation Unleashed "5 attractive habits proof by psychology" 45.5K, 54 s; silent_grid "If Your Crush Catches You Staring At Them In Class" 1.38M, 43 s; silent_grid "The Trick That Silences Your Parents Instantly" 632K, 48 s; Silent Noise "Sad psychological facts about people" 760K, 29 s; Silent Noise "Amazing psychological facts (I bet you don't know)" 377K, 23 s; ZYRON MIND "Silent Love Signs" 252K, 39 s; ZYRON MIND "Hidden Love signals" 130K, 32 s; Kira Realm "Basic Psychological Trick" 1.09M, 13 s; Kira Realm "How to Destroy the Ego of Someone" 10.7K, 22 s; Kyroo_Talks "The Silent Reality Of Every Student" 899K, 31 s; Kyroo_Talks "3 dark Psychology tricks for students" 338K, 35 s; OnlyJayus "Psychology Tricks" 45.1M, 40 s; OnlyJayus "Dark Tricks Psychology" 2.47M, 58 s; Sambucha "The 15 second personality test" 11.5M, 46 s; Sambucha "Do You Think Like A Psychopath?" 9.21M, 51 s. Also watch Apex Psychology ("The Psychology of People Who Are Too Aware" 2.8M).

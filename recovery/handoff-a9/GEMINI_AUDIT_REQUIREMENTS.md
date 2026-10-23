@@ -101,3 +101,13 @@ Evidence: D43 went out with 31.8% stayed / 68.2% swiped (about 60 impressions). 
 3. **No numbered-list title openers** ("3 Signs...", "5 Tricks..."). D16, D23, D31, D51, D125 and D132 now use their `hook_alt` as the title. D52 and D53 still start with a number word; Gemini gave no replacement.
 4. **App must (see VIRAL_BATCH_A9.md):** trim the first 0.15 to 0.25 s of the ElevenLabs file so the first consonant hits at 0:00.00; layer a loud low-bass thud or shutter hit at 0:00.00; burn the whole 3 to 4 word hook banner (`hook_text`) onto frame 1 in large yellow/white text with a thick black border above the eyes, static, not word by word.
 5. Do not re-title the live video; test a "2-second hook surgery" by replacing only the first 2 seconds of the D43 file with the new beat 1 (clip MF031-C1), a 0:00 bass hit and a static FAKE PRAISE TRAP banner.
+
+## A12 (23 Oct 2026) "Will go viral" audit, applied
+- Lighting: night/2 a.m./midnight shots no longer say sunlit/sunlight/daylight/natural window light (D37, D45, D155, D166, D32, D59, D58, D147, D128). Prompt pack keeps the chiaroscuro anchor.
+- Shot 1 is now an animated clip on every pending non-A9 Short (kinds swapped with the first clip, IDs renumbered). Hook cut is at 2.0-2.5 s in shot_times. App must still re-time from ElevenLabs word timestamps and keep the first cut at ~2.3 s.
+- D69, D72, D73, D74, D75, D76, D77, D126, D78, D79, D129, D130 expanded from 6 to 10 dark shots (7 stills, 3 clips). Voiceover untouched. Checker V1 now allows 6-12 shots.
+- "framed as an extreme close-up of the face" removed where the hook is a prop, crowd or action (46 shots, set to Medium). Kept where the shot is a face.
+- NOT applied, needs the owner's decision: Gemini top-10 order (D43, D19, D61, D73, D23, D77, D16, D126, D78, D14) differs from the A9 queue (D43, D19, D23, D61, D16). Long-form order MF-L-07, MF-L-02, MF-L-05 first also differs from the current plan.
+
+## A13 (24 Oct 2026) regex cleanup
+Fixed doubled lighting phrases ("warm afternoon dim light", "dim street under dim street", ", one sunlit"), removed "cold screen glow" from shots with no screen (now "filtered window light"), and removed "frozen/unmoving" from clip actions.

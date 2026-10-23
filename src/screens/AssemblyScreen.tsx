@@ -222,16 +222,16 @@ export default function AssemblyScreen() {
         />
         {project.mode === 'short' ? (
           <ToggleRow
-            label="Music bed (test)"
-            hint="A soft pad made by the app under the voice, ducked while speech plays, about 14 dB under it. Off unless you switch it on."
+            label="Music bed"
+            hint="A dark ambient drone made by the app under the voice, ducked while speech plays, about 23 dB under it (A11)."
             value={settings.musicBed}
             onChange={(v) => updateSettings({ musicBed: v })}
           />
         ) : null}
         {project.mode === 'short' ? (
           <ToggleRow
-            label="Whoosh at cuts (test)"
-            hint="A short, quiet whoosh at each cut, made by the app. Off unless you switch it on."
+            label="Thud at cuts"
+            hint="A subtle low-frequency thud at each scene change, made by the app (A11)."
             value={settings.cutWhoosh}
             onChange={(v) => updateSettings({ cutWhoosh: v })}
           />

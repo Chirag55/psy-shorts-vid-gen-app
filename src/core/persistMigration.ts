@@ -27,6 +27,8 @@ export function migrateStudio(persisted: unknown, version: number, clipBudget: n
   // v5 brings Hoot back: on at the end card unless he was fully on before.
   if (version < 5) s = { ...s, includeMascot: true, mascot: s.mascot === 'full' ? 'full' : 'endcard' };
   if (version < 4 && s.shortClipBudget === 1) s = { ...s, shortClipBudget: clipBudget };
+  // v6 (A11): the dark music bed and the low thud at each cut are on by default.
+  if (version < 6) s = { ...s, musicBed: true, cutWhoosh: true };
   return s !== persisted.settings ? { ...persisted, settings: s } : persisted;
 }
 

@@ -251,6 +251,8 @@ export function finishV2Short(e: any, script: any): any {
       ...(e.hook_alt ? { hookAlt: e.hook_alt, hookDefault: script.beats[0]?.text ?? '' } : {}),
       ...(e.title_alt ? { titleAlt: e.title_alt } : {}),
       ...(viralOf(e) ? { viral: viralOf(e) } : {}),
+      ...(e.subtitles?.length ? { subtitles: e.subtitles } : {}),
+      ...(e.shot_times?.length ? { shotTimes: e.shot_times } : {}),
     },
   };
 }

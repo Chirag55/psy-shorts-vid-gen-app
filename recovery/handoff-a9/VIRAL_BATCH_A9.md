@@ -38,3 +38,12 @@ Lock the channel to the Dark Psychology / Manipulation Defense cluster for these
 - Frame 1 carries the full `hook_text` banner (3 to 4 words, large yellow or white, thick black border, above the character's eyes), static from 0:00.00. Never animate it word by word.
 - Beat 1 is an extreme close-up on every Short (already set in the bank); mood is `dark` (chiaroscuro thriller lighting).
 - Test on D43 first: replace only the first 2 seconds of the live video with the new MF031-C1 clip, the bass hit and the FAKE PRAISE TRAP banner. Leave the live title alone.
+
+## Audit A11 (competitor study, 23 Oct 2026): app settings
+See `GEMINI_COMPETITOR_AUDIT_A11.md`. App must apply: 3 to 5 word subtitle blocks (Montserrat ExtraBold, black shadow, one yellow or red keyword), a 2.5 s top banner from `hook_text`, dark ambient music at -22 to -25 dB under a -3 dB voice with a riser or thud at each scene change, audio cut 0.2 s after the last syllable. Plan uploads 40% Social Combat, 40% "The Psychology of People Who...", 20% 15-second Mind Test.
+
+## Voice, subtitles and visuals aligned (23 Oct 2026)
+- Every pending Short now has `shot_times` (start-end seconds per shot, in true on-screen order) and `subtitles` (3 to 5 word blocks, verbatim from the narration, one KEYWORD in capitals for the highlight colour). This replaces the earlier paraphrased subtitle lines on the five Viral Batch Shorts.
+- For the five Viral Batch Shorts, shot cuts were set by meaning: each shot starts while its own narration line is spoken (Gemini's beat-to-line pairing), then evened out toward about 2.4 s. For the rest, cuts fall on subtitle-block boundaries nearest to equal spacing.
+- Times are estimated at about 2 words per second (24 s plan for the Viral Batch). **The app must re-time subtitles and cuts from the actual ElevenLabs audio (word timestamps), keeping the shot order and the line each shot belongs to.** `shorts_storyboard.txt` prints shot, visual and subtitle blocks together for review.
+- Second-person rule applied to the scripts (first 10 s: every sentence has You, Your or They): 40 pending Shorts had lines changed by a few words (`second_person.py` lists each edit). Not touched: the Gemini-written scripts (Viral Batch, D69, D72 to D79, D126, D129, D130) and the in_progress Shorts (D14, D35, D53, D54, D125, D132, D172, D174, D181), whose voice may already be recorded.

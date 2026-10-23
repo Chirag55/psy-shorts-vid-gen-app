@@ -644,6 +644,7 @@ function exportV2Items(items: any[]): string[] {
     ...raw(e, 'viral_batch'),
     ...scalar(e, 'upload_order'),
     ...scalar(e, 'voice_settings'),
+    ...yamlList('shot_times', e.shot_times?.map((t: any) => `${t.id} ${t.start.toFixed(1)}-${t.end.toFixed(1)}`)),
     ...yamlList('subtitles', e.subtitles?.map(cueLine)),
     ...scalar(e, 'bottom_overlay'),
     ...scalar(e, 'thumb_text'),

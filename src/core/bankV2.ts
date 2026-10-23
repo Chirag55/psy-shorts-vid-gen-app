@@ -2,6 +2,7 @@ import yaml from 'yaml';
 import { isHootPose, poseNamedIn, type HootPose } from './hoot';
 import { LF_CATCHPHRASE } from './longformPlan';
 import { parseSubtitles, parseVoiceSettings } from './viralBatch';
+import { parseShotTimes } from './bankTiming';
 
 /**
  * Topic bank v2 parser. A bank is a markdown export: one `### ID — Title`
@@ -45,7 +46,7 @@ const SHORT_FIELDS = new Set([
   'bank_id', 'priority', 'queue', 'title_final', 'description_full', 'evidence', 'ig_keywords', 'ig_line1', 'ig_hashtags', 'ig_first_comment',
   'clip_ids', 'still_ids', 'mood', 'audit', 'hook_text_pov', 'test_profile', 'test_hook', 'shots', 'est_seconds', 'compliance', 'character_looks',
   'viral_batch', 'upload_order', 'voice_settings', 'subtitles', 'bottom_overlay', 'thumb_text', 'thumb_visual',
-  'virality_rank', 'gemini_score',
+  'virality_rank', 'gemini_score', 'shot_times',
 ]);
 
 /** Fields a reader may find on either kind (accepted without a warning in the other kind's block). */
@@ -255,6 +256,11 @@ function metaFields(f: Record<string, any>, line: number, id: string, issues: Ba
     const { cues, bad: wrong } = parseSubtitles(lines(f.subtitles) ?? []);
     if (wrong.length) bad(`"subtitles" lines must read "0:00-0:02.5 | text" (${wrong.length} do not)`);
     else assign('subtitles', cues);
+  }
+  if (f.shot_times !== undefined) {
+    const { times, bad: wrong } = parseShotTimes(lines(f.shot_times) ?? []);
+    if (wrong.length) bad(`"shot_times" lines must read "MF031-C1 0.0-3.0" (${wrong.length} do not)`);
+    else assign('shot_times', times);
   }
   if (f.voice_settings !== undefined && !parseVoiceSettings(String(f.voice_settings))) {
     bad('"voice_settings" names no stability, clarity, style or speed');

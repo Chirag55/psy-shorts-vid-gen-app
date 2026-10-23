@@ -34,6 +34,10 @@ export interface CaptionStyle {
   scaleX?: number;
   /** Baseline of a single line within the band; several lines centre on it. */
   firstBaseline?: number;
+  /** Colour of highlighted words (the neon yellow by default). */
+  highlight?: string;
+  /** A heavy black drop shadow under every word, offset this many pixels (A11 subtitles). */
+  shadowOffset?: number;
 }
 
 /** Where a Short's one-word caption sits, as a share of the frame height. */
@@ -271,10 +275,16 @@ export async function renderCaptionFrames(opts: RenderCaptionsOptions): Promise<
       for (const line of lines) {
         let x = Math.round((style.width - line.width) / 2);
         for (const token of line.tokens) {
+          if (style.shadowOffset) {
+            const d = style.shadowOffset;
+            canvas.drawText(token.text, x + d, y + d, stroke, font);
+            fill.setColor(Skia.Color(OUTLINE));
+            canvas.drawText(token.text, x + d, y + d, fill, font);
+          }
           // Outline first, fill second — drawing the stroke over the fill would
           // eat into the glyph and thin the text.
           canvas.drawText(token.text, x, y, stroke, font);
-          fill.setColor(Skia.Color(token.active ? NEON_YELLOW : WHITE));
+          fill.setColor(Skia.Color(token.active ? (style.highlight ?? NEON_YELLOW) : WHITE));
           canvas.drawText(token.text, x, y, fill, font);
           x = Math.round(x + token.width + spaceWidth);
         }

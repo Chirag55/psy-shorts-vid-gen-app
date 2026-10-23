@@ -51,6 +51,7 @@ def ident(text, looks=None):
     return ' '.join(src[c] for c in src if re.search(r'\b%s\b' % c, text))
 
 VIRAL = {}
+ALL = {}
 
 def parse(path):
     t = open(path, encoding='utf-8').read()
@@ -64,6 +65,7 @@ def parse(path):
                 nar = [x.strip() for x in ch.split('**narration:**', 1)[1].strip().split('\n') if x.strip()] if '**narration:**' in ch else []
                 shorts.append((d['id'], d.get('visual_beats') or [], d.get('character_looks') or None, nar))
                 if d.get('viral_batch'): VIRAL[d['id']] = d
+                ALL[d['id']] = d
             else: lfs.append((d['id'], d))
             continue
         for y in re.findall(r'```yaml\n(.*?)\n```', ch, re.S):
@@ -87,11 +89,17 @@ def main():
     board = []
     for sid, beats, looks, nar in shorts:
         board.append(f'=== {sid} ({len(beats)} shots) ===')
-        words_ = [w for x in nar for w in x.split()]; N = len(beats) or 1; L = len(words_)
+        dd = ALL.get(sid, {}); st = {x.split()[0]: x.split()[1] for x in dd.get('shot_times', [])}
+        subs = dd.get('subtitles', [])
+        def _rng(x): a_, z_ = x.split(' | ')[0].split('-'); return float(a_), float(z_)
         for i, b in enumerate(beats):
-            kk = b.split('|')[0].split()
-            seg = ' '.join(words_[i * L // N:(i + 1) * L // N])
-            board.append(f"{i + 1}. {kk[0]} [{kk[1] if len(kk) > 1 else ''}] {' | '.join(x.strip() for x in b.split('|')[1:4])}\n   VO while on screen: {seg}")
+            kk = b.split('|')[0].split(); w = st.get(kk[0], '')
+            board.append(f"{i + 1}. {kk[0]} [{kk[1] if len(kk) > 1 else ''}] {w}s | " + ' | '.join(x.strip() for x in b.split('|')[1:4]))
+            if w:
+                a0, z0 = [float(v) for v in w.split('-')]
+                for x in subs:
+                    sa, sz = _rng(x)
+                    if sa < z0 - 1e-6 and sz > a0 + 1e-6: board.append(f"      SUB {x}")
         if sid in VIRAL:
             v = VIRAL[sid]
             board.append(f"   >> VIRAL BATCH {v['viral_batch']} | upload {v.get('upload_order')} | queue {v.get('queue')}")

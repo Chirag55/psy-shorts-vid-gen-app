@@ -6,8 +6,7 @@
  */
 import type { KenBurnsMove } from './types';
 import type { Shot } from './shots';
-import { parseVisualBeat, sizeFamily, type VisualBeat } from './shortFormat';
-import { VIRAL_SHOTS } from './viralBatch';
+import { parseVisualBeat, SHOT_COUNT, sizeFamily, type VisualBeat } from './shortFormat';
 import { typedPrompt } from './typedPrompt';
 import { shortShotPrompt } from './shotPrompts';
 
@@ -172,11 +171,11 @@ export function calmAudioSeconds(segments: Segment[]): number {
   return total(segments) * CALM_STRETCH;
 }
 
-/** CR-91: 6 to 9 typed shots (10 for an A9 viral Short), all slow moves, exactly three clips. */
+/** CR-91: 6 to 12 typed shots (A12), all slow moves, exactly three clips. */
 export function isSlowShots(beats: VisualBeat[]): boolean {
   const clips = beats.filter((b) => b.type?.startsWith('clip')).length;
   return (
-    beats.length >= 6 && beats.length <= VIRAL_SHOTS && beats.every((b) => b.type && /^slow\b/i.test(b.camera)) && clips === 3
+    beats.length >= 6 && beats.length <= SHOT_COUNT.max && beats.every((b) => b.type && /^slow\b/i.test(b.camera)) && clips === 3
   );
 }
 

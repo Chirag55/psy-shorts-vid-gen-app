@@ -81,7 +81,7 @@ export function parseShotLine(line: string): ShotLine | null {
 
 export function checkShots(lines: string[], looks: string[] = []): string[] {
   const out: string[] = [];
-  if (lines.length < 6 || lines.length > 9) out.push(`V1 ${lines.length} shots, need 6 to 9`);
+  if (lines.length < 6 || lines.length > 12) out.push(`V1 ${lines.length} shots, need 6 to 12`);
   const parsed = lines.map(parseShotLine);
   const clips = parsed.every(Boolean) ? (parsed as ShotLine[]).filter((p) => p.kind.startsWith('clip')).length : -1;
   if (clips !== 3) out.push(`V1 ${clips} clips, need exactly 3`);

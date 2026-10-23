@@ -39,7 +39,7 @@ const IDS: Record<string, string> = {
 };
 
 /** Real people who share a first name with the old cast; never renamed. */
-const PROTECTED = ['Ben Franklin', 'BenFranklin'];
+const PROTECTED = ['Ben Franklin', 'Ben FRANKLIN', 'BenFranklin'];
 
 /** Culture-tied phrasing in planning notes, made place-neutral (CR-78). */
 const NEUTRAL_PHRASES: [string, string][] = [

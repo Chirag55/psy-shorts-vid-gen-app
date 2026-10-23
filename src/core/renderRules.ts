@@ -30,7 +30,6 @@ export const LINE_PAUSE_MAX = 0.8;
 /** How far a punch-in zooms. */
 export const PUNCH_IN = 0.12;
 export const WHOOSH_SECONDS = 0.3;
-export const WHOOSH_DB = -24;
 
 const AUDIO_FORMAT = 'aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo';
 
@@ -292,10 +291,12 @@ export function shortEncodeArgs(preview?: boolean): string[] {
 
 /** A soft whoosh under each cut. */
 export function whooshFilters(input: string, cutTimes: number[], duration: number, out: string): string[] {
-  const times = cutTimes.filter((t) => t > 0.05 && t < duration - 0.1).map((t) => Math.max(0, t - 0.08));
+  const times = cutTimes.filter((t) => t > 0.05 && t < duration - 0.1).map((t) => Math.max(0, t - 0.02));
   if (!times.length) return [`[${input}]anull[${out}]`];
   const n = times.length;
-  const source = `anoisesrc=d=${WHOOSH_SECONDS}:c=pink:r=44100:a=0.6,highpass=f=500,lowpass=f=5000,afade=t=in:d=0.1,afade=t=out:st=0.12:d=0.18,volume=${WHOOSH_DB}dB,aformat=sample_fmts=fltp:channel_layouts=stereo`;
+  // A11: a subtle low-frequency thud at every scene change (it was a pink-noise whoosh).
+  const thud = '0.6*sin(2*PI*55*t)*exp(-10*t)+0.25*sin(2*PI*110*t)*exp(-16*t)';
+  const source = `aevalsrc='${thud}':s=44100:d=${WHOOSH_SECONDS},lowpass=f=260,volume=${CUT_THUD_DB}dB,aformat=sample_fmts=fltp:channel_layouts=stereo`;
   const labels = times.map((_, i) => `[${out}_w${i}]`);
   return [
     n !== 1 ? `${source},asplit=${n}${labels.join('')}` : `${source}${labels[0]}`,
@@ -313,21 +314,26 @@ export function hookHitFilters(input: string, out: string): string[] {
   ];
 }
 
-/** A quiet synth bed under the voice, ducked whenever the voice speaks. */
+/** A11: the cut thud sits well under the voice. */
+export const CUT_THUD_DB = -14;
+/** A11: the dark ambient bed sits 22 to 25 dB under the voice. */
+export const MUSIC_BED_DB = -23;
+
+/** A quiet dark synth drone (A minor) under the voice, ducked whenever the voice speaks. */
 export function musicBedFilters(
   voice: string,
   duration: number,
   out: string,
   opts: { gainDb?: number; fadeSeconds?: number } = {},
 ): string[] {
-  const gain = opts.gainDb ?? -15;
+  const gain = opts.gainDb ?? MUSIC_BED_DB;
   const fade = opts.fadeSeconds ?? 1.5;
   const length = Math.max(2, duration + 2).toFixed(2);
   const weights = [0.25, 0.2, 0.2, 0.15];
-  const expr = [110, 164.81, 220, 261.63].map((f, i) => `${weights[i]}*sin(2*PI*${f}*t)`).join('+');
+  const expr = [55, 110, 130.81, 164.81].map((f, i) => `${weights[i]}*sin(2*PI*${f}*t)`).join('+');
   const fadeOutAt = Math.max(0, duration - fade).toFixed(2);
   return [
-    `aevalsrc='${expr}':s=44100:d=${length},lowpass=f=900,tremolo=f=0.15:d=0.35,volume=${gain}dB,afade=t=in:d=${fade},afade=t=out:st=${fadeOutAt}:d=${fade},aformat=sample_fmts=fltp:channel_layouts=stereo[${out}_bed]`,
+    `aevalsrc='${expr}':s=44100:d=${length},lowpass=f=600,tremolo=f=0.12:d=0.4,volume=${gain}dB,afade=t=in:d=${fade},afade=t=out:st=${fadeOutAt}:d=${fade},aformat=sample_fmts=fltp:channel_layouts=stereo[${out}_bed]`,
     `[${voice}]asplit=2[${out}_v1][${out}_v2]`,
     `[${out}_bed][${out}_v2]sidechaincompress=threshold=0.015:ratio=10:attack=15:release=450[${out}_duck]`,
     `[${out}_v1][${out}_duck]amix=inputs=2:duration=first:normalize=0[${out}]`,

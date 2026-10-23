@@ -6,7 +6,6 @@
 import { contentWords, FIRST_SENTENCE_MAX_WORDS } from './authenticity';
 import { citationHits, spokenBody } from './citations';
 import { neutralHits } from './neutralLint';
-import { VIRAL_SHOTS } from './viralBatch';
 
 export { citationHits, spokenBody };
 
@@ -23,7 +22,8 @@ export const CLIP_MOVES = ['orbit', 'handheld', 'whip-pan', 'dolly-back', 'rack-
 export const TYPED_PATTERN = ['clip', 'still', 'clip*', 'still', 'still', 'clip'];
 export const TYPED_BEATS = TYPED_PATTERN.length;
 export const MIN_TYPED_SETTINGS = 4;
-export const SHOT_COUNT = { min: 6, max: 9 };
+/** CR-91 shot counts; A12 (24 Oct 2026) allows up to 12. */
+export const SHOT_COUNT = { min: 6, max: 12 };
 export const SHORT_CLIPS = 3;
 export const SLOW_MOVES = [
   'slow push-in',
@@ -132,7 +132,7 @@ export function shortFormatProblems(e: SceneFirstFields): { red: string[]; amber
   const shots = (e.visual_beats ?? []).map(parseVisualBeat);
   const cr91 =
     shots.length >= SHOT_COUNT.min &&
-    shots.length <= (e.viral_batch ? VIRAL_SHOTS : SHOT_COUNT.max) &&
+    shots.length <= SHOT_COUNT.max &&
     shots.every((s) => s?.type && /^slow\b/i.test(s.camera));
   if (cr91) {
     const list = shots as VisualBeat[];

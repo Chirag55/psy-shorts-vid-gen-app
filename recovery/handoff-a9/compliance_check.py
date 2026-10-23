@@ -53,7 +53,7 @@ def check_short(sid, lines, hook_text, pov, title_final, beats, tags, pinned, ef
     if not hook_text or not 2 <= len(words(hook_text)) <= 6: e.append('S10 hook_text')
     if not pov or not pov.startswith('POV: '): e.append('S10 pov')
     if title_final and len(title_final) > 100: e.append('S9 title > 100 chars')
-    if not 6 <= len(beats) <= 9: e.append(f'V1 {len(beats)} shots, need 6 to 9')
+    if not 6 <= len(beats) <= 12: e.append(f'V1 {len(beats)} shots, need 6 to 12')
     clips = sum(1 for b in beats if b.split('|')[0].split()[1].startswith('clip')) if beats and all('|' in b and len(b.split('|')[0].split()) > 1 for b in beats) else -1
     if clips != 3: e.append(f'V1 {clips} clips, need exactly 3')
     seen = set(); prev = None; ids = set()
